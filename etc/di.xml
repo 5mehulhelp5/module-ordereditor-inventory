@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © MageWorx. All rights reserved.
+ * See LICENSE.txt for license details.
+ */
+ -->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <preference for="MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface"
+                type="MageWorx\OrderEditorInventory\Model\StockQtyManager"/>
+    <type name="MageWorx\OrderEditor\Model\Order\Item">
+        <arguments>
+            <argument name="stockManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Stock\MultiSourceInventoryManager</argument>
+        </arguments>
+    </type>
+    <!-- Return Processor for order edit-->
+    <type name="Magento\InventorySalesApi\Model\ReturnProcessor\GetSourceDeductedOrderItemsChain">
+        <arguments>
+            <argument name="sourceDeductedItemsSelector" xsi:type="array">
+                <item name="source_deducted_items_on_mageworx_order_edit" xsi:type="object">MageWorx\OrderEditorInventory\Model\Stock\ReturnProcessor\GetItemsToReturnPerSource</item>
+            </argument>
+        </arguments>
+    </type>
+    <!-- Shipment manager with MSI support -->
+    <type name="MageWorx\OrderEditor\Model\Order\Sales">
+        <arguments>
+            <argument name="shipmentManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Order\ShipmentManager</argument>
+        </arguments>
+    </type>
+</config>
