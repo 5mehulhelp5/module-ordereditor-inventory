@@ -29,4 +29,11 @@ interface StockQtyManagerInterface
      * @param float|null $qty
      */
     public function returnQtyToStock(OrderItem $orderItem, float $qty = null): void;
+
+    /**
+     * Return all shipment items to stock (cancel\delete shipment)
+     *
+     * @param \Magento\Sales\Api\Data\ShipmentInterface $shipment
+     */
+    public function cancelShipment(\Magento\Sales\Api\Data\ShipmentInterface $shipment): void;
 }

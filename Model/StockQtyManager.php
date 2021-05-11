@@ -28,8 +28,10 @@ use Magento\InventorySalesApi\Model\ReturnProcessor\ProcessRefundItemsInterface;
 use Magento\InventorySalesApi\Model\ReturnProcessor\Request\ItemsToRefundInterfaceFactory;
 use Magento\InventorySalesApi\Model\StockByWebsiteIdResolverInterface;
 use Magento\Sales\Api\Data\OrderItemInterface;
+use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order\Item as OrderItem;
 use Magento\Store\Api\WebsiteRepositoryInterface;
+use MageWorx\OrderEditorInventory\Api\CancelShipmentProcessorInterface;
 use MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface;
 
 /**
@@ -110,6 +112,16 @@ class StockQtyManager implements StockQtyManagerInterface
     private $processRefundItems;
 
     /**
+     * @var OrderRepositoryInterface
+     */
+    private $orderRepository;
+
+    /**
+     * @var CancelShipmentProcessorInterface
+     */
+    private $processCancelledShipmentItems;
+
+    /**
      * StockQtyManager constructor.
      *
      * @param PlaceReservationsForSalesEventInterface $placeReservationsForSalesEvent
@@ -126,6 +138,8 @@ class StockQtyManager implements StockQtyManagerInterface
      * @param GetSkuFromOrderItemInterface $getSkuFromOrderItem
      * @param ItemsToRefundInterfaceFactory $itemsToRefundFactory
      * @param ProcessRefundItemsInterface $processRefundItems
+     * @param OrderRepositoryInterface $orderRepository
+     * @param CancelShipmentProcessorInterface $processCancelledShipmentItems
      */
     public function __construct(
         PlaceReservationsForSalesEventInterface $placeReservationsForSalesEvent,
@@ -141,7 +155,9 @@ class StockQtyManager implements StockQtyManagerInterface
         SalesEventExtensionFactory $salesEventExtensionFactory,
         GetSkuFromOrderItemInterface $getSkuFromOrderItem,
         ItemsToRefundInterfaceFactory $itemsToRefundFactory,
-        ProcessRefundItemsInterface $processRefundItems
+        ProcessRefundItemsInterface $processRefundItems,
+        OrderRepositoryInterface $orderRepository,
+        CancelShipmentProcessorInterface $processCancelledShipmentItems
     ) {
         $this->placeReservationsForSalesEvent              = $placeReservationsForSalesEvent;
         $this->getSkusByProductIds                         = $getSkusByProductIds;
@@ -157,6 +173,8 @@ class StockQtyManager implements StockQtyManagerInterface
         $this->getSkuFromOrderItem                         = $getSkuFromOrderItem;
         $this->itemsToRefundFactory                        = $itemsToRefundFactory;
         $this->processRefundItems                          = $processRefundItems;
+        $this->orderRepository                             = $orderRepository;
+        $this->processCancelledShipmentItems               = $processCancelledShipmentItems;
     }
 
     /**
@@ -243,7 +261,7 @@ class StockQtyManager implements StockQtyManagerInterface
         }
 
         $items         = [$orderItem];
-        $itemsToRefund = $refundedOrderItemIds = $returnToStockItems = [];
+        $itemsToRefund = $refundedOrderItemIds = [];
 
         /** @var OrderItem|OrderItemInterface $orderItem */
         foreach ($items as $orderItem) {
@@ -257,7 +275,8 @@ class StockQtyManager implements StockQtyManagerInterface
                  * Total items with currently returning qty
                  * Overall qty without refunded before items
                  */
-                $processedQty = $orderItem->getQtyInvoiced() - $orderItem->getQtyRefunded(); // All qty before return
+                $processedQty = /* @TODO: Qty ordered should be here? */
+                    $orderItem->getQtyOrdered() - $orderItem->getQtyRefunded(); // All qty before return
 
                 $itemsToRefund[] = $this->itemsToRefundFactory->create(
                     [
@@ -270,6 +289,14 @@ class StockQtyManager implements StockQtyManagerInterface
         }
 
         $this->processRefundItems->execute($order, $itemsToRefund, $refundedOrderItemIds);
+    }
+
+    /**
+     * @param \Magento\Sales\Api\Data\ShipmentInterface $shipment
+     */
+    public function cancelShipment(\Magento\Sales\Api\Data\ShipmentInterface $shipment): void
+    {
+        $this->processCancelledShipmentItems->execute($shipment);
     }
 
     /**

@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace MageWorx\OrderEditorInventory\Model\Order;
 
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Sales\Api\ShipmentRepositoryInterface;
 use Magento\Sales\Model\Order as OriginalOrder;
 use MageWorx\OrderEditor\Model\Config\Source\Shipments\UpdateMode;
 use MageWorx\OrderEditor\Helper\Data as Helper;
@@ -19,6 +20,7 @@ use MageWorx\OrderEditor\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Api\OrderPaymentRepositoryInterface;
 use Magento\Framework\DB\TransactionFactory;
 use Magento\Framework\Registry;
+use MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface;
 
 /**
  * Class ShipmentManager
@@ -73,6 +75,21 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
     private $originalOrderRepositoryFactory;
 
     /**
+     * @var array
+     */
+    private $processedItems = [];
+
+    /**
+     * @var ShipmentRepositoryInterface
+     */
+    private $shipmentRepository;
+
+    /**
+     * @var StockQtyManagerInterface
+     */
+    private $stockQtyManager;
+
+    /**
      * ShipmentManager constructor.
      *
      * @param Helper $helperData
@@ -80,10 +97,12 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
      * @param TransactionFactory $transactionFactory
      * @param ShipmentLoaderFactory $shipmentLoaderFactory
      * @param OrderRepositoryInterface $orderRepository
+     * @param ShipmentRepositoryInterface $shipmentRepository
      * @param OrderItemRepositoryInterface $orderItemRepository
      * @param OrderPaymentRepositoryInterface $orderPaymentRepository
      * @param OriginalOrderRepositoryInterface $originalOrderRepository
      * @param OriginalOrderRepositoryInterfaceFactory $originalOrderRepositoryFactory
+     * @param StockQtyManagerInterface $stockQtyManager
      */
     public function __construct(
         Helper $helperData,
@@ -91,20 +110,24 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
         TransactionFactory $transactionFactory,
         ShipmentLoaderFactory $shipmentLoaderFactory,
         OrderRepositoryInterface $orderRepository,
+        ShipmentRepositoryInterface $shipmentRepository,
         OrderItemRepositoryInterface $orderItemRepository,
         OrderPaymentRepositoryInterface $orderPaymentRepository,
         OriginalOrderRepositoryInterface $originalOrderRepository,
-        OriginalOrderRepositoryInterfaceFactory $originalOrderRepositoryFactory
+        OriginalOrderRepositoryInterfaceFactory $originalOrderRepositoryFactory,
+        StockQtyManagerInterface $stockQtyManager
     ) {
         $this->helperData                     = $helperData;
         $this->registry                       = $registry;
         $this->shipmentLoaderFactory          = $shipmentLoaderFactory;
         $this->transactionFactory             = $transactionFactory;
         $this->orderRepository                = $orderRepository;
+        $this->shipmentRepository             = $shipmentRepository;
         $this->orderItemRepository            = $orderItemRepository;
         $this->orderPaymentRepository         = $orderPaymentRepository;
         $this->originalOrderRepository        = $originalOrderRepository;
         $this->originalOrderRepositoryFactory = $originalOrderRepositoryFactory;
+        $this->stockQtyManager                = $stockQtyManager;
     }
 
     /**
@@ -131,7 +154,12 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
                     $orderItemId = $shipmentItem->getOrderItemId();
                     $orderItem   = $order->getItemById($orderItemId);
 
-                    $qtyToShip = $orderItem->getQtyOrdered() -
+                    if (!$orderItem) {
+                        continue;
+                    }
+
+                    $qtyToShip = $orderItem->getQtyOrdered(
+                        ) -                       /* 👇 Already shipped items should not be shipped one more time */
                         ($orderItem->getQtyRefunded() + $orderItem->getQtyCanceled());
 
                     $itemsBySourceCode[$sourceCode][$orderItemId] = [
@@ -179,8 +207,20 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
     private function removeAllShipments(\MageWorx\OrderEditor\Model\Order $order): void
     {
         $shipments = $order->getShipmentsCollection();
+        /** @var \Magento\Sales\Model\Order\Shipment $shipment */
         foreach ($shipments as $shipment) {
-            $shipment->delete();
+            // Unregister by key to prevent exceptions (@see body of the load method)
+            $this->registry->unregister('current_shipment');
+            // Need to reload order registry in order repository
+            $newOrderRepo = $this->originalOrderRepositoryFactory->create();
+            $shipment     = $this->shipmentLoaderFactory->create(['orderRepository' => $newOrderRepo])
+                                                        ->setOrderId($order->getId())
+                                                        ->setShipmentId($shipment->getId())
+                                                        ->load();
+
+            $this->stockQtyManager->cancelShipment($shipment);
+
+            $this->shipmentRepository->delete($shipment);
         }
 
         $orderItems = $order->getItems();
