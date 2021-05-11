@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace MageWorx\OrderEditorInventory\Model\Order;
 
 use Magento\Framework\Exception\LocalizedException;
+use Magento\InventorySalesApi\Model\GetSkuFromOrderItemInterface;
 use Magento\Sales\Api\ShipmentRepositoryInterface;
 use Magento\Sales\Model\Order as OriginalOrder;
 use MageWorx\OrderEditor\Model\Config\Source\Shipments\UpdateMode;
@@ -90,6 +91,11 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
     private $stockQtyManager;
 
     /**
+     * @var GetSkuFromOrderItemInterface
+     */
+    private $getSkuFromOrderItem;
+
+    /**
      * ShipmentManager constructor.
      *
      * @param Helper $helperData
@@ -103,6 +109,7 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
      * @param OriginalOrderRepositoryInterface $originalOrderRepository
      * @param OriginalOrderRepositoryInterfaceFactory $originalOrderRepositoryFactory
      * @param StockQtyManagerInterface $stockQtyManager
+     * @param GetSkuFromOrderItemInterface $getSkuFromOrderItem
      */
     public function __construct(
         Helper $helperData,
@@ -115,7 +122,8 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
         OrderPaymentRepositoryInterface $orderPaymentRepository,
         OriginalOrderRepositoryInterface $originalOrderRepository,
         OriginalOrderRepositoryInterfaceFactory $originalOrderRepositoryFactory,
-        StockQtyManagerInterface $stockQtyManager
+        StockQtyManagerInterface $stockQtyManager,
+        GetSkuFromOrderItemInterface $getSkuFromOrderItem
     ) {
         $this->helperData                     = $helperData;
         $this->registry                       = $registry;
@@ -128,6 +136,7 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
         $this->originalOrderRepository        = $originalOrderRepository;
         $this->originalOrderRepositoryFactory = $originalOrderRepositoryFactory;
         $this->stockQtyManager                = $stockQtyManager;
+        $this->getSkuFromOrderItem            = $getSkuFromOrderItem;
     }
 
     /**
@@ -158,9 +167,10 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
                         continue;
                     }
 
-                    $qtyToShip = $orderItem->getQtyOrdered(
-                        ) -                       /* 👇 Already shipped items should not be shipped one more time */
+                    $sku       = $this->getSkuFromOrderItem->execute($orderItem);
+                    $qtyToShip = $orderItem->getQtyOrdered() -
                         ($orderItem->getQtyRefunded() + $orderItem->getQtyCanceled());
+                    /* 👆 Already shipped items should not be shipped one more time */
 
                     $itemsBySourceCode[$sourceCode][$orderItemId] = [
                         'qtyBeforeRemove' => $shipmentItem->getQty(),
@@ -169,7 +179,7 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
                         'orderItemId'     => $orderItemId,
                         'product'         => $orderItem->getProductId(),
                         'qtyToShip'       => $qtyToShip,
-                        'sku'             => $shipmentItem->getSku(),
+                        'sku'             => $sku,
                         'orderItem'       => $orderItem
                     ];
                 }

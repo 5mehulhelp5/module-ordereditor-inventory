@@ -27,7 +27,9 @@ use Magento\InventorySalesApi\Model\GetSkuFromOrderItemInterface;
 use Magento\InventorySalesApi\Model\ReturnProcessor\ProcessRefundItemsInterface;
 use Magento\InventorySalesApi\Model\ReturnProcessor\Request\ItemsToRefundInterfaceFactory;
 use Magento\InventorySalesApi\Model\StockByWebsiteIdResolverInterface;
+use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\Data\OrderItemInterface;
+use Magento\Sales\Api\Data\ShipmentInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order\Item as OrderItem;
 use Magento\Store\Api\WebsiteRepositoryInterface;
@@ -187,18 +189,41 @@ class StockQtyManager implements StockQtyManagerInterface
      */
     public function deductQtyFromStock(OrderItem $orderItem, float $qty = null): void
     {
-        $itemsById = $itemsBySku = $itemsToSell = [];
-        $order     = $orderItem->getOrder();
+        if ($orderItem->getProductType() === \Magento\ConfigurableProduct\Model\Product\Type\Configurable::TYPE_CODE) {
+            $orderItems = $orderItem->getChildrenItems();
+        } elseif ($orderItem->getProductType() === \Magento\Bundle\Model\Product\Type::TYPE_CODE) {
+            $orderItems = $orderItem->getChildrenItems();
+        } else {
+            $orderItems = [$orderItem];
+        }
+
+        foreach ($orderItems as $item) {
+            $this->deduct($item, $qty);
+        }
+    }
+
+    /**
+     * @param OrderItem $orderItem
+     * @param float|null $qty
+     * @throws CouldNotSaveException
+     * @throws InputException
+     * @throws LocalizedException
+     * @throws NoSuchEntityException
+     */
+    private function deduct(OrderItem $orderItem, float $qty = null): void
+    {
+        $order = $orderItem->getOrder();
         if (!$order || !$order->getId()) {
             throw new InputException(__('Order Id must be set before processing order item'));
         }
 
+        $itemsById = $itemsBySku = $itemsToSell = [];
+
         $itemsById[$orderItem->getProductId()] = $qty ?? $orderItem->getQtyOrdered();
         $productSkus                           = $this->getSkusByProductIds->execute(array_keys($itemsById));
-        $productTypes                          = $this->getProductTypesBySkus->execute($productSkus);
 
         foreach ($productSkus as $productId => $sku) {
-            if (false === $this->isSourceItemManagementAllowedForProductType->execute($productTypes[$sku])) {
+            if (!$this->isValidItem($sku, $orderItem)) {
                 continue;
             }
 
@@ -260,7 +285,24 @@ class StockQtyManager implements StockQtyManagerInterface
             throw new InputException(__('Order Id must be set before processing order item'));
         }
 
-        $items         = [$orderItem];
+        if ($orderItem->getProductType() === \Magento\ConfigurableProduct\Model\Product\Type\Configurable::TYPE_CODE) {
+            $items = $orderItem->getChildrenItems();
+        } elseif ($orderItem->getProductType() === \Magento\Bundle\Model\Product\Type::TYPE_CODE) {
+            $items = $orderItem->getChildrenItems();
+        } else {
+            $items = [$orderItem];
+        }
+
+        $this->returnItems($items, $order, $qty);
+    }
+
+    /**
+     * @param OrderItem[] $items
+     * @param OrderInterface $order
+     * @param float|null $qty
+     */
+    private function returnItems(array $items, OrderInterface $order, float $qty = null): void
+    {
         $itemsToRefund = $refundedOrderItemIds = [];
 
         /** @var OrderItem|OrderItemInterface $orderItem */
@@ -292,9 +334,9 @@ class StockQtyManager implements StockQtyManagerInterface
     }
 
     /**
-     * @param \Magento\Sales\Api\Data\ShipmentInterface $shipment
+     * @param ShipmentInterface $shipment
      */
-    public function cancelShipment(\Magento\Sales\Api\Data\ShipmentInterface $shipment): void
+    public function cancelShipment(ShipmentInterface $shipment): void
     {
         $this->processCancelledShipmentItems->execute($shipment);
     }
