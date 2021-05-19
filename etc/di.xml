@@ -8,6 +8,8 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
     <preference for="MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface"
                 type="MageWorx\OrderEditorInventory\Model\StockQtyManager"/>
+    <preference for="MageWorx\OrderEditorInventory\Api\CancelShipmentProcessorInterface"
+                type="MageWorx\OrderEditorInventory\Model\Stock\ReturnProcessor\CancelShipmentProcessor"/>
     <type name="MageWorx\OrderEditor\Model\Order\Item">
         <arguments>
             <argument name="stockManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Stock\MultiSourceInventoryManager</argument>

@@ -27,9 +27,13 @@ use Magento\InventorySalesApi\Model\GetSkuFromOrderItemInterface;
 use Magento\InventorySalesApi\Model\ReturnProcessor\ProcessRefundItemsInterface;
 use Magento\InventorySalesApi\Model\ReturnProcessor\Request\ItemsToRefundInterfaceFactory;
 use Magento\InventorySalesApi\Model\StockByWebsiteIdResolverInterface;
+use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\Data\OrderItemInterface;
+use Magento\Sales\Api\Data\ShipmentInterface;
+use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order\Item as OrderItem;
 use Magento\Store\Api\WebsiteRepositoryInterface;
+use MageWorx\OrderEditorInventory\Api\CancelShipmentProcessorInterface;
 use MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface;
 
 /**
@@ -110,6 +114,16 @@ class StockQtyManager implements StockQtyManagerInterface
     private $processRefundItems;
 
     /**
+     * @var OrderRepositoryInterface
+     */
+    private $orderRepository;
+
+    /**
+     * @var CancelShipmentProcessorInterface
+     */
+    private $processCancelledShipmentItems;
+
+    /**
      * StockQtyManager constructor.
      *
      * @param PlaceReservationsForSalesEventInterface $placeReservationsForSalesEvent
@@ -126,6 +140,8 @@ class StockQtyManager implements StockQtyManagerInterface
      * @param GetSkuFromOrderItemInterface $getSkuFromOrderItem
      * @param ItemsToRefundInterfaceFactory $itemsToRefundFactory
      * @param ProcessRefundItemsInterface $processRefundItems
+     * @param OrderRepositoryInterface $orderRepository
+     * @param CancelShipmentProcessorInterface $processCancelledShipmentItems
      */
     public function __construct(
         PlaceReservationsForSalesEventInterface $placeReservationsForSalesEvent,
@@ -141,7 +157,9 @@ class StockQtyManager implements StockQtyManagerInterface
         SalesEventExtensionFactory $salesEventExtensionFactory,
         GetSkuFromOrderItemInterface $getSkuFromOrderItem,
         ItemsToRefundInterfaceFactory $itemsToRefundFactory,
-        ProcessRefundItemsInterface $processRefundItems
+        ProcessRefundItemsInterface $processRefundItems,
+        OrderRepositoryInterface $orderRepository,
+        CancelShipmentProcessorInterface $processCancelledShipmentItems
     ) {
         $this->placeReservationsForSalesEvent              = $placeReservationsForSalesEvent;
         $this->getSkusByProductIds                         = $getSkusByProductIds;
@@ -157,6 +175,8 @@ class StockQtyManager implements StockQtyManagerInterface
         $this->getSkuFromOrderItem                         = $getSkuFromOrderItem;
         $this->itemsToRefundFactory                        = $itemsToRefundFactory;
         $this->processRefundItems                          = $processRefundItems;
+        $this->orderRepository                             = $orderRepository;
+        $this->processCancelledShipmentItems               = $processCancelledShipmentItems;
     }
 
     /**
@@ -169,18 +189,43 @@ class StockQtyManager implements StockQtyManagerInterface
      */
     public function deductQtyFromStock(OrderItem $orderItem, float $qty = null): void
     {
-        $itemsById = $itemsBySku = $itemsToSell = [];
-        $order     = $orderItem->getOrder();
+        if ($orderItem->getProductType() === \Magento\ConfigurableProduct\Model\Product\Type\Configurable::TYPE_CODE) {
+            $orderItems = $orderItem->getChildrenItems();
+        } elseif ($orderItem->getProductType() === \Magento\Bundle\Model\Product\Type::TYPE_CODE) {
+            $orderItems = $orderItem->getChildrenItems();
+        } elseif ($orderItem->getParentItemId()) {
+            return; // Do not deduct qty of child item manually
+        } else {
+            $orderItems = [$orderItem];
+        }
+
+        foreach ($orderItems as $item) {
+            $this->deduct($item, $qty);
+        }
+    }
+
+    /**
+     * @param OrderItem $orderItem
+     * @param float|null $qty
+     * @throws CouldNotSaveException
+     * @throws InputException
+     * @throws LocalizedException
+     * @throws NoSuchEntityException
+     */
+    private function deduct(OrderItem $orderItem, float $qty = null): void
+    {
+        $order = $orderItem->getOrder();
         if (!$order || !$order->getId()) {
             throw new InputException(__('Order Id must be set before processing order item'));
         }
 
+        $itemsById = $itemsBySku = $itemsToSell = [];
+
         $itemsById[$orderItem->getProductId()] = $qty ?? $orderItem->getQtyOrdered();
         $productSkus                           = $this->getSkusByProductIds->execute(array_keys($itemsById));
-        $productTypes                          = $this->getProductTypesBySkus->execute($productSkus);
 
         foreach ($productSkus as $productId => $sku) {
-            if (false === $this->isSourceItemManagementAllowedForProductType->execute($productTypes[$sku])) {
+            if (!$this->isValidItem($sku, $orderItem)) {
                 continue;
             }
 
@@ -242,8 +287,27 @@ class StockQtyManager implements StockQtyManagerInterface
             throw new InputException(__('Order Id must be set before processing order item'));
         }
 
-        $items         = [$orderItem];
-        $itemsToRefund = $refundedOrderItemIds = $returnToStockItems = [];
+        if ($orderItem->getProductType() === \Magento\ConfigurableProduct\Model\Product\Type\Configurable::TYPE_CODE) {
+            $items = $orderItem->getChildrenItems();
+        } elseif ($orderItem->getProductType() === \Magento\Bundle\Model\Product\Type::TYPE_CODE) {
+            $items = $orderItem->getChildrenItems();
+        } else {
+            $items = [$orderItem];
+        }
+
+        if (!empty($items)) {
+            $this->returnItems($items, $order, $qty);
+        }
+    }
+
+    /**
+     * @param OrderItem[] $items
+     * @param OrderInterface $order
+     * @param float|null $qty
+     */
+    private function returnItems(array $items, OrderInterface $order, float $qty = null): void
+    {
+        $itemsToRefund = $refundedOrderItemIds = [];
 
         /** @var OrderItem|OrderItemInterface $orderItem */
         foreach ($items as $orderItem) {
@@ -257,7 +321,8 @@ class StockQtyManager implements StockQtyManagerInterface
                  * Total items with currently returning qty
                  * Overall qty without refunded before items
                  */
-                $processedQty = $orderItem->getQtyInvoiced() - $orderItem->getQtyRefunded(); // All qty before return
+                $processedQty = /* @TODO: Qty ordered should be here? */
+                    $orderItem->getQtyOrdered() - $orderItem->getQtyRefunded(); // All qty before return
 
                 $itemsToRefund[] = $this->itemsToRefundFactory->create(
                     [
@@ -269,7 +334,17 @@ class StockQtyManager implements StockQtyManagerInterface
             }
         }
 
-        $this->processRefundItems->execute($order, $itemsToRefund, $refundedOrderItemIds);
+        if (!empty($itemsToRefund)) {
+            $this->processRefundItems->execute($order, $itemsToRefund, $refundedOrderItemIds);
+        }
+    }
+
+    /**
+     * @param ShipmentInterface $shipment
+     */
+    public function cancelShipment(ShipmentInterface $shipment): void
+    {
+        $this->processCancelledShipmentItems->execute($shipment);
     }
 
     /**
