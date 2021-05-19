@@ -1,11 +1,6 @@
 {
     "name": "mageworx/module-ordereditor-inventory",
     "description": "Order Editor Inventory Plugin",
-    "config": {
-        "platform": {
-            "php": ">=7.2"
-        }
-    },
     "require": {
         "mageworx/module-ordereditorbase": ">=2.9.7",
         "magento/module-inventory": ">=1.2.0"
