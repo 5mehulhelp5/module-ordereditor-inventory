@@ -193,6 +193,8 @@ class StockQtyManager implements StockQtyManagerInterface
             $orderItems = $orderItem->getChildrenItems();
         } elseif ($orderItem->getProductType() === \Magento\Bundle\Model\Product\Type::TYPE_CODE) {
             $orderItems = $orderItem->getChildrenItems();
+        } elseif ($orderItem->getParentItemId()) {
+            return; // Do not deduct qty of child item manually
         } else {
             $orderItems = [$orderItem];
         }
@@ -293,7 +295,9 @@ class StockQtyManager implements StockQtyManagerInterface
             $items = [$orderItem];
         }
 
-        $this->returnItems($items, $order, $qty);
+        if (!empty($items)) {
+            $this->returnItems($items, $order, $qty);
+        }
     }
 
     /**
@@ -330,7 +334,9 @@ class StockQtyManager implements StockQtyManagerInterface
             }
         }
 
-        $this->processRefundItems->execute($order, $itemsToRefund, $refundedOrderItemIds);
+        if (!empty($itemsToRefund)) {
+            $this->processRefundItems->execute($order, $itemsToRefund, $refundedOrderItemIds);
+        }
     }
 
     /**
