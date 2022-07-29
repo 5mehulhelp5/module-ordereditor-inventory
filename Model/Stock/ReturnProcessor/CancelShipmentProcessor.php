@@ -10,7 +10,6 @@ use Magento\Framework\Exception\CouldNotSaveException;
 use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Validation\ValidationException;
-use Magento\InventorySales\Model\ReturnProcessor\GetSalesChannelForOrder;
 use Magento\InventorySalesApi\Api\Data\SalesEventExtensionInterface;
 use Magento\InventorySalesApi\Api\Data\SalesEventInterface;
 use Magento\InventorySalesApi\Api\Data\ItemToSellInterfaceFactory;
@@ -24,6 +23,10 @@ use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\InventoryApi\Api\SourceItemsSaveInterface;
 use Magento\Sales\Model\Order\Shipment\Item as ShipmentItem;
 use Psr\Log\LoggerInterface;
+use Magento\Sales\Api\Data\OrderInterface;
+use Magento\Store\Api\WebsiteRepositoryInterface;
+use Magento\InventorySalesApi\Api\Data\SalesChannelInterfaceFactory;
+use Magento\InventorySalesApi\Api\Data\SalesChannelInterface;
 
 class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\CancelShipmentProcessorInterface
 {
@@ -46,11 +49,6 @@ class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\Canc
      * @var SalesEventExtensionFactory;
      */
     private $salesEventExtensionFactory;
-
-    /**
-     * @var GetSalesChannelForOrder
-     */
-    private $getSalesChannelForOrder;
 
     /**
      * @var OrderRepositoryInterface
@@ -78,13 +76,22 @@ class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\Canc
     private $logger;
 
     /**
+     * @var SalesChannelInterfaceFactory
+     */
+    private $salesChannelFactory;
+
+    /**
+     * @var WebsiteRepositoryInterface
+     */
+    private $websiteRepository;
+
+    /**
      * CancelShipmentProcessor constructor.
      *
      * @param SalesEventInterfaceFactory $salesEventFactory
      * @param ItemToSellInterfaceFactory $itemsToSellFactory
      * @param PlaceReservationsForSalesEventInterface $placeReservationsForSalesEvent
      * @param SalesEventExtensionFactory $salesEventExtensionFactory
-     * @param GetSalesChannelForOrder $getSalesChannelForOrder
      * @param OrderItemRepositoryInterface $orderItemRepository
      * @param OrderRepositoryInterface $orderRepository
      * @param SourceItemsSaveInterface $sourceItemsSave
@@ -96,22 +103,24 @@ class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\Canc
         ItemToSellInterfaceFactory $itemsToSellFactory,
         PlaceReservationsForSalesEventInterface $placeReservationsForSalesEvent,
         SalesEventExtensionFactory $salesEventExtensionFactory,
-        GetSalesChannelForOrder $getSalesChannelForOrder,
         OrderItemRepositoryInterface $orderItemRepository,
         OrderRepositoryInterface $orderRepository,
         SourceItemsSaveInterface $sourceItemsSave,
         GetSourceItemBySourceCodeAndSku $getSourceItemBySourceCodeAndSku,
+        SalesChannelInterfaceFactory $salesChannelFactory,
+        WebsiteRepositoryInterface $websiteRepository,
         LoggerInterface $logger
     ) {
         $this->salesEventFactory               = $salesEventFactory;
         $this->itemsToSellFactory              = $itemsToSellFactory;
         $this->placeReservationsForSalesEvent  = $placeReservationsForSalesEvent;
         $this->salesEventExtensionFactory      = $salesEventExtensionFactory;
-        $this->getSalesChannelForOrder         = $getSalesChannelForOrder;
         $this->orderRepository                 = $orderRepository;
         $this->orderItemRepository             = $orderItemRepository;
         $this->sourceItemsSave                 = $sourceItemsSave;
         $this->getSourceItemBySourceCodeAndSku = $getSourceItemBySourceCodeAndSku;
+        $this->salesChannelFactory             = $salesChannelFactory;
+        $this->websiteRepository               = $websiteRepository;
         $this->logger                          = $logger;
     }
 
@@ -129,12 +138,6 @@ class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\Canc
 
         /** @var ShipmentItem $shipmentItem */
         foreach ($shipmentItems as $shipmentItem) {
-            $returnItems[] = [
-                'sku'    => $shipmentItem->getSku(),
-                'qty'    => $shipmentItem->getQty(),
-                'source' => $shipment->getExtensionAttributes()->getSourceCode()
-            ];
-
             $sourceCode = $shipment->getExtensionAttributes()->getSourceCode();
             if ($sourceCode === null) {
                 continue; // Source code is not set, we can't return items
@@ -195,7 +198,7 @@ class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\Canc
     private function placeReservationForCancelShipmentEvent(ShipmentInterface $shipment, array $itemToSell): void
     {
         $order        = $this->orderRepository->get($shipment->getOrderId());
-        $salesChannel = $this->getSalesChannelForOrder->execute($order);
+        $salesChannel = $this->getSalesChannelForOrder($order);
 
         /** @var SalesEventExtensionInterface */
         $salesEventExtension = $this->salesEventExtensionFactory->create(
@@ -215,5 +218,25 @@ class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\Canc
         $salesEvent->setExtensionAttributes($salesEventExtension);
 
         $this->placeReservationsForSalesEvent->execute($itemToSell, $salesChannel, $salesEvent);
+    }
+
+    /**
+     * @param OrderInterface $order
+     * @return SalesChannelInterface
+     * @throws \Magento\Framework\Exception\NoSuchEntityException
+     */
+    private function getSalesChannelForOrder(OrderInterface $order): SalesChannelInterface
+    {
+        $websiteId   = (int)$order->getStore()->getWebsiteId();
+        $websiteCode = $this->websiteRepository->getById($websiteId)->getCode();
+
+        return $this->salesChannelFactory->create(
+            [
+                'data' => [
+                    'type' => SalesChannelInterface::TYPE_WEBSITE,
+                    'code' => $websiteCode
+                ]
+            ]
+        );
     }
 }
