@@ -3,10 +3,14 @@
     "description": "Order Editor Inventory Plugin",
     "require": {
         "mageworx/module-ordereditorbase": ">=2.9.7",
-        "magento/module-inventory": ">=1.2.0"
+        "magento/module-inventory-api": "^1.0",
+        "magento/module-inventory-sales-api": "^1.0",
+        "magento/module-inventory-catalog-api": "^1.0",
+        "magento/module-inventory-configuration-api": "^1.0",
+        "magento/module-inventory-source-deduction-api": "^1.0"
     },
     "type": "magento2-module",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "license": [
         "OSL-3.0",
         "AFL-3.0"

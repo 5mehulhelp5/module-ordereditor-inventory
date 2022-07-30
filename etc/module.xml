@@ -9,7 +9,11 @@
     <module name="MageWorx_OrderEditorInventory" setup_version="1.0.0">
         <sequence>
             <module name="MageWorx_OrderEditor"/>
-            <module name="Magento_Inventory"/>
+            <module name="Magento_InventoryApi"/>
+            <module name="Magento_InventorySalesApi"/>
+            <module name="Magento_InventoryCatalogApi"/>
+            <module name="Magento_InventoryConfigurationApi"/>
+            <module name="Magento_InventorySourceDeductionApi"/>
         </sequence>
     </module>
 </config>
