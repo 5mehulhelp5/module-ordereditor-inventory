@@ -322,7 +322,7 @@ class StockQtyManager implements StockQtyManagerInterface
                  * Overall qty without refunded before items
                  */
                 $processedQty = /* @TODO: Qty ordered should be here? */
-                    $orderItem->getQtyOrdered() - $orderItem->getQtyRefunded(); // All qty before return
+                    $orderItem->getQtyOrdered() - $orderItem->getQtyCanceled() - $orderItem->getQtyRefunded(); // All qty before return
 
                 $itemsToRefund[] = $this->itemsToRefundFactory->create(
                     [
