@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © MageWorx. All rights reserved.
+ * See LICENSE.txt for license details.
+ */
+ -->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Event/etc/events.xsd">
+    <event name="mageworx_order_shipping_method_updated_before_save">
+        <observer
+                name="mageworx_order_shipping_method_instore_pickup_handler"
+                instance="MageWorx\OrderEditorInventory\Observer\InStorePickupHandler"
+        />
+    </event>
+    <event name="mageworx_order_editor_adminhtml_block_get_shipping_rates_after">
+        <observer
+                name="mageworx_order_editor_instore_pickup_sources"
+                instance="MageWorx\OrderEditorInventory\Observer\ShippingRates\InStorePickupSources"
+        />
+    </event>
+</config>
