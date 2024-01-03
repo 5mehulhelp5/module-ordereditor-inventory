@@ -94,9 +94,7 @@ class InStorePickupHandler implements ObserverInterface
             $quote = $order->getQuote();
 
             if ($shippingMethod === InStorePickup::DELIVERY_METHOD) {
-                /**
-                 * Is there a need?
-                 */
+
                 if ($quote->isVirtual()) {
                     return;
                 }
@@ -191,10 +189,6 @@ class InStorePickupHandler implements ObserverInterface
         if (null === $extension) {
             $extension = $this->orderExtensionFactory->create();
         }
-        /* @todo Проверять ли?
-         * if ($extension->getPickupLocationCode()) {
-         * return;
-         * }*/
 
         $extension->setPickupLocationCode($pickupLocationCode);
         $order->setExtensionAttributes($extension);
