@@ -3,12 +3,15 @@
  * Copyright © MageWorx. All rights reserved.
  * See LICENSE.txt for license details.
  */
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace MageWorx\OrderEditorInventory\Model;
 
 use Magento\Framework\App\ResourceConnection;
 
+/**
+ * A class to manage records in the inventory_pickup_location_order and inventory_pickup_location_quote_address tables
+ */
 class InventoryPickupLocationTableManager
 {
     private const CONNECTION_NAME                         = 'sales';
@@ -26,6 +29,11 @@ class InventoryPickupLocationTableManager
         $this->connection = $connection;
     }
 
+    /**
+     * Deletes one record by its id from inventory_pickup_location_order table
+     * @param int $id
+     * @return void
+     */
     public function removeRowByOrderId(int $id)
     {
         if ($this->isValidId($id)) {
@@ -34,6 +42,11 @@ class InventoryPickupLocationTableManager
         }
     }
 
+    /**
+     * Deletes one record by its id from inventory_pickup_location_quote_address table
+     * @param int $id
+     * @return void
+     */
     public function removeRowByQuoteAddressId(int $id)
     {
         if ($this->isValidId($id)) {
@@ -43,6 +56,12 @@ class InventoryPickupLocationTableManager
         }
     }
 
+    /**
+     * Deletes one record by its id
+     * @param string $table
+     * @param array $where
+     * @return void
+     */
     protected function removeFromTableById(string $table, array $where)
     {
         $connection = $this->connection->getConnection(self::CONNECTION_NAME);

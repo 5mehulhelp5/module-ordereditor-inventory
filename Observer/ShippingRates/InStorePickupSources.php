@@ -18,22 +18,27 @@ use Magento\InventoryInStorePickupSales\Model\ResourceModel\OrderPickupLocation\
 use MageWorx\OrderEditor\Model\Order;
 use MageWorx\OrderEditor\Model\Quote;
 
+/**
+ * Forms the sources List for in-store delivery method before outputting in the edit form
+ */
 class InStorePickupSources implements \Magento\Framework\Event\ObserverInterface
 {
     private const CODE = 'instore_pickup';
 
     protected ?Quote $quote;
     protected ?Order $order;
+    protected \Psr\Log\LoggerInterface $logger;
     protected StockResolverInterface $stockResolver;
     protected GetPickupSources $getPickupSources;
     protected GetPickupLocationCodeByOrderId $getPickupLocationCodeByOrderId;
 
     public function __construct(
+        \Psr\Log\LoggerInterface $logger,
         StockResolverInterface $stockResolver,
         GetPickupSources $getPickupSources,
         GetPickupLocationCodeByOrderId $getPickupLocationCodeByOrderId
-
     ) {
+        $this->logger = $logger;
         $this->stockResolver = $stockResolver;
         $this->getPickupSources = $getPickupSources;
         $this->getPickupLocationCodeByOrderId = $getPickupLocationCodeByOrderId;
@@ -95,7 +100,7 @@ class InStorePickupSources implements \Magento\Framework\Event\ObserverInterface
 
             $currentPickupLocCode = '';
             if ($this->order) {
-                $currentPickupLocCode = (string)$this->getPickupLocationCodeByOrderId->execute($this->order->getEntityId());
+                $currentPickupLocCode = (string)$this->getPickupLocationCodeByOrderId->execute((int)$this->order->getEntityId());
             }
 
             $pickupSources = $this->getPickupSources->execute($stockId) ?? [];
@@ -108,7 +113,7 @@ class InStorePickupSources implements \Magento\Framework\Event\ObserverInterface
                 }
             }
         } catch (\Magento\Framework\Exception\LocalizedException $exception) {
-            //
+            $this->logger->error($exception->getLogMessage());
         }
 
         return $sourcesList;

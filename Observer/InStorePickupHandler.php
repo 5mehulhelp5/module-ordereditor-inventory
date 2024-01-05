@@ -3,7 +3,7 @@
  * Copyright © MageWorx. All rights reserved.
  * See LICENSE.txt for license details.
  */
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace MageWorx\OrderEditorInventory\Observer;
 
@@ -31,7 +31,7 @@ use Magento\Sales\Api\OrderAddressRepositoryInterface;
 use MageWorx\OrderEditorInventory\Model\InventoryPickupLocationTableManager;
 
 /**
- * @todo Should I change only for shipping? Or should I change Billing data as well, e.g. shipping_description?
+ * Prepares and modifies data to properly save the Magento "In-Store Delivery" method
  */
 class InStorePickupHandler implements ObserverInterface
 {
@@ -84,6 +84,14 @@ class InStorePickupHandler implements ObserverInterface
         $this->getShippingAddressBySourceCodeAndOriginalAddress = $getShippingAddressBySourceCodeAndOriginalAddress;
     }
 
+    /**
+     * Modifies the following data when saving a delivery method:
+     * Addresses in the quote_address and sales_order_address tables
+     * Changes shipping_description in sales_order table
+     * Sets pickup_store in Order & Quote
+     * @param Observer $observer
+     * @return void
+     */
     public function execute(Observer $observer)
     {
         try {
@@ -109,7 +117,7 @@ class InStorePickupHandler implements ObserverInterface
 
                 $this->changeQuoteAddressToPickupLocation($quote, $pickupLocationCode);
                 $this->changeOrderAddressToPickupLocation($order, $quote, $pickupLocationCode);
-                $this->setOrderExtensionAttribute($order, $pickupLocationCode);
+                $this->setPickupLocationCodeInOrderExtensionAttribute($order, $pickupLocationCode);
 
                 /**
                  * @todo add a pickup_location_code column update to the sales_order_grid table
@@ -183,7 +191,7 @@ class InStorePickupHandler implements ObserverInterface
         }
     }
 
-    protected function setOrderExtensionAttribute(Order $order, string $pickupLocationCode = ''): void
+    protected function setPickupLocationCodeInOrderExtensionAttribute(Order $order, string $pickupLocationCode = ''): void
     {
         if ('' === $pickupLocationCode) {
             return;
@@ -211,7 +219,7 @@ class InStorePickupHandler implements ObserverInterface
     {
         $source = $this->sourceRepository->get($pickupLocationCode);
         $sourceName = $source->getData('frontend_name') ?? $source->getName();
-        $carrierTitle = $this->getCarrierTitle->execute($order->getStoreId());
+        $carrierTitle = $this->getCarrierTitle->execute((int)$order->getStoreId());
         if (empty($carrierTitle) || empty($sourceName)) {
             return $order->getShippingDescription();
         }

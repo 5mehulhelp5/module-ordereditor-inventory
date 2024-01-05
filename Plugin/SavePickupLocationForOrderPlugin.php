@@ -3,7 +3,7 @@
  * Copyright © MageWorx. All rights reserved.
  * See LICENSE.txt for license details.
  */
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace MageWorx\OrderEditorInventory\Plugin;
 
@@ -14,15 +14,8 @@ use MageWorx\OrderEditor\Model\Order\OrderRepository;
 
 class SavePickupLocationForOrderPlugin
 {
-    /**
-     * @var SaveOrderPickupLocation
-     */
-    private $saveOrderPickupLocation;
-
-    /**
-     * @var GetPickupLocationCode
-     */
-    private $getPickupLocationCode;
+    private SaveOrderPickupLocation $saveOrderPickupLocation;
+    private GetPickupLocationCode $getPickupLocationCode;
 
     /**
      * @param SaveOrderPickupLocation $saveOrderPickupLocation
@@ -37,11 +30,12 @@ class SavePickupLocationForOrderPlugin
     }
 
     /**
-     * @todo check the moment of the first row entry in the table inventory_pickup_location_order
+     *
      * @param OrderRepository $subject
      * @param Order $result
      * @param Order $entity
      * @return Order
+     * @todo check the moment of the first row entry in the table inventory_pickup_location_order
      */
     public function afterSave(OrderRepository $subject, Order $result, Order $entity): Order
     {
