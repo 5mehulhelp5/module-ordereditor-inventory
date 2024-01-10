@@ -35,7 +35,6 @@ class SavePickupLocationForOrderPlugin
      * @param Order $result
      * @param Order $entity
      * @return Order
-     * @todo check the moment of the first row entry in the table inventory_pickup_location_order
      */
     public function afterSave(OrderRepository $subject, Order $result, Order $entity): Order
     {
