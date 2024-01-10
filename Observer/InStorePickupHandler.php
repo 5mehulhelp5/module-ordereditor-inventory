@@ -217,12 +217,17 @@ class InStorePickupHandler implements ObserverInterface
      */
     private function getOrderShippingDescription(\Magento\Sales\Model\Order $order, string $pickupLocationCode): string
     {
+        $carrierTitle = '';
         $source = $this->sourceRepository->get($pickupLocationCode);
         $sourceName = $source->getData('frontend_name') ?? $source->getName();
-        $carrierTitle = $this->getCarrierTitle->execute((int)$order->getStoreId());
-        if (empty($carrierTitle) || empty($sourceName)) {
+        if(!empty($sourceName)) {
+            $carrierTitle = $this->getCarrierTitle->execute((int)$order->getStoreId());
+        }
+
+        if ($carrierTitle === '') {
             return $order->getShippingDescription();
         }
+
         return $this->getShippingDescription($carrierTitle, $sourceName);
     }
 }

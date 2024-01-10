@@ -56,10 +56,7 @@ class InStorePickupSources implements \Magento\Framework\Event\ObserverInterface
              * @var \MageWorx\OrderEditor\Block\Adminhtml\Sales\Order\Edit\Form\Shipping\Method $shippingMethodForm
              */
             $shippingMethodForm = $observer->getData('shipping_method_form');
-            if (
-                !is_a($shippingMethodForm, \Magento\Framework\DataObject::class) ||
-                !is_a($shippingMethodForm->getQuote(), \Magento\Quote\Model\Quote::class)
-            ) {
+            if (!$this->hasMagentoQuoteModelInstance($shippingMethodForm)) {
                 return;
             }
 
@@ -144,5 +141,15 @@ class InStorePickupSources implements \Magento\Framework\Event\ObserverInterface
     protected function isSelectedSource(\Magento\InventoryApi\Api\Data\SourceInterface $source, string $pickupCode): bool
     {
         return (string)$source->getSourceCode() === $pickupCode;
+    }
+
+    /**
+     * @param mixed $shippingMethodForm
+     * @return bool
+     */
+    protected function hasMagentoQuoteModelInstance($shippingMethodForm): bool
+    {
+        return is_a($shippingMethodForm, \Magento\Framework\DataObject::class) &&
+            is_a($shippingMethodForm->getQuote(), \Magento\Quote\Model\Quote::class);
     }
 }
