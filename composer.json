@@ -15,7 +15,7 @@
         "magento/module-inventory-in-store-pickup-sales-admin-ui": "^1.0"
     },
     "type": "magento2-module",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "license": [
         "OSL-3.0",
         "AFL-3.0"
