@@ -15,6 +15,12 @@
             <argument name="stockManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Stock\MultiSourceInventoryManager</argument>
         </arguments>
     </type>
+    <!-- Support for editing the order pickup location -->
+    <type name="MageWorx\OrderEditor\Model\Order\OrderRepository">
+        <plugin name="MageWorx_OrderEditor::SavePickupLocationForOrder"
+                type="MageWorx\OrderEditorInventory\Plugin\SavePickupLocationForOrderPlugin"
+                sortOrder="10"/>
+    </type>
     <!-- Return Processor for order edit-->
     <type name="Magento\InventorySalesApi\Model\ReturnProcessor\GetSourceDeductedOrderItemsChain">
         <arguments>

@@ -3,11 +3,16 @@
     "description": "Order Editor Inventory Plugin",
     "require": {
         "mageworx/module-ordereditorbase": ">=2.9.7",
+        "magento/module-inventory": "^1.0",
         "magento/module-inventory-api": "^1.0",
         "magento/module-inventory-sales-api": "^1.0",
         "magento/module-inventory-catalog-api": "^1.0",
         "magento/module-inventory-configuration-api": "^1.0",
-        "magento/module-inventory-source-deduction-api": "^1.0"
+        "magento/module-inventory-source-deduction-api": "^1.0",
+        "magento/module-inventory-in-store-pickup-sales": "^1.0",
+        "magento/module-inventory-in-store-pickup-quote": "^1.0",
+        "magento/module-inventory-in-store-pickup-shipping-api": "^1.0",
+        "magento/module-inventory-in-store-pickup-sales-admin-ui": "^1.0"
     },
     "type": "magento2-module",
     "version": "1.0.3",

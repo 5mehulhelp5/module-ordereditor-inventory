@@ -3,6 +3,7 @@
  * Copyright © MageWorx. All rights reserved.
  * See LICENSE.txt for license details.
  */
+declare(strict_types = 1);
 
 namespace MageWorx\OrderEditorInventory\Model\Stock\ReturnProcessor;
 
@@ -138,7 +139,14 @@ class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\Canc
 
         /** @var ShipmentItem $shipmentItem */
         foreach ($shipmentItems as $shipmentItem) {
-            $sourceCode = $shipment->getExtensionAttributes()->getSourceCode();
+            $sourceCode = null;
+            /**
+             * @var \Magento\Sales\Api\Data\ShipmentExtension|null $extensionAttributes
+             */
+            $extensionAttributes = $shipment->getExtensionAttributes();
+            if (!is_null($extensionAttributes)) {
+                $sourceCode = $extensionAttributes->getSourceCode();
+            }
             if ($sourceCode === null) {
                 continue; // Source code is not set, we can't return items
             }
