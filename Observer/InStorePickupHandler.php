@@ -7,28 +7,23 @@ declare(strict_types = 1);
 
 namespace MageWorx\OrderEditorInventory\Observer;
 
-use Psr\Log\LoggerInterface;
-
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
-
 use Magento\Inventory\Model\SourceRepository;
-use Magento\InventoryInStorePickupShippingApi\Model\Carrier\InStorePickup;
-use Magento\InventoryInStorePickupShippingApi\Model\Carrier\GetCarrierTitle;
 use Magento\InventoryInStorePickupQuote\Model\Address\SetAddressPickupLocation;
 use Magento\InventoryInStorePickupSalesAdminUi\Model\GetShippingAddressBySourceCodeAndOriginalAddress;
-
-use Magento\Quote\Model\Quote;
+use Magento\InventoryInStorePickupShippingApi\Model\Carrier\GetCarrierTitle;
+use Magento\InventoryInStorePickupShippingApi\Model\Carrier\InStorePickup;
 use Magento\Quote\Api\CartRepositoryInterface;
+use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\Quote\Address\ToOrderAddress as ToOrderAddressConverter;
-
-use Magento\Sales\Model\Order;
 use Magento\Sales\Api\Data\OrderExtensionFactory;
 use Magento\Sales\Api\OrderAddressRepositoryInterface;
-
+use Magento\Sales\Model\Order;
 use MageWorx\OrderEditorInventory\Model\InventoryPickupLocationTableManager;
+use Psr\Log\LoggerInterface;
 
 /**
  * Prepares and modifies data to properly save the Magento "In-Store Delivery" method
@@ -37,15 +32,15 @@ class InStorePickupHandler implements ObserverInterface
 {
     private ?\Magento\Store\Model\Store $store = null;
 
-    private LoggerInterface $logger;
-    private GetCarrierTitle $getCarrierTitle;
-    private SourceRepository $sourceRepository;
-    private CartRepositoryInterface $cartRepository;
-    private OrderExtensionFactory $orderExtensionFactory;
-    private SetAddressPickupLocation $setAddressPickupLocation;
-    private ToOrderAddressConverter $quoteAddressToOrderAddress;
-    private OrderAddressRepositoryInterface $orderAddressRepository;
-    private InventoryPickupLocationTableManager $inventoryPickupLocationTableManager;
+    private LoggerInterface                                  $logger;
+    private GetCarrierTitle                                  $getCarrierTitle;
+    private SourceRepository                                 $sourceRepository;
+    private CartRepositoryInterface                          $cartRepository;
+    private OrderExtensionFactory                            $orderExtensionFactory;
+    private SetAddressPickupLocation                         $setAddressPickupLocation;
+    private ToOrderAddressConverter                          $quoteAddressToOrderAddress;
+    private OrderAddressRepositoryInterface                  $orderAddressRepository;
+    private InventoryPickupLocationTableManager              $inventoryPickupLocationTableManager;
     private GetShippingAddressBySourceCodeAndOriginalAddress $getShippingAddressBySourceCodeAndOriginalAddress;
 
     /**
@@ -61,26 +56,26 @@ class InStorePickupHandler implements ObserverInterface
      * @param GetShippingAddressBySourceCodeAndOriginalAddress $getShippingAddressBySourceCodeAndOriginalAddress
      */
     public function __construct(
-        LoggerInterface $logger,
-        GetCarrierTitle $getCarrierTitle,
-        SourceRepository $sourceRepository,
-        CartRepositoryInterface $cartRepository,
-        OrderExtensionFactory $orderExtensionFactory,
-        SetAddressPickupLocation $setAddressPickupLocation,
-        ToOrderAddressConverter $quoteAddressToOrderAddress,
-        OrderAddressRepositoryInterface $orderAddressRepository,
-        InventoryPickupLocationTableManager $inventoryPickupLocationTableManager,
+        LoggerInterface                                  $logger,
+        GetCarrierTitle                                  $getCarrierTitle,
+        SourceRepository                                 $sourceRepository,
+        CartRepositoryInterface                          $cartRepository,
+        OrderExtensionFactory                            $orderExtensionFactory,
+        SetAddressPickupLocation                         $setAddressPickupLocation,
+        ToOrderAddressConverter                          $quoteAddressToOrderAddress,
+        OrderAddressRepositoryInterface                  $orderAddressRepository,
+        InventoryPickupLocationTableManager              $inventoryPickupLocationTableManager,
         GetShippingAddressBySourceCodeAndOriginalAddress $getShippingAddressBySourceCodeAndOriginalAddress
     ) {
-        $this->logger = $logger;
-        $this->cartRepository = $cartRepository;
-        $this->getCarrierTitle = $getCarrierTitle;
-        $this->sourceRepository = $sourceRepository;
-        $this->orderExtensionFactory = $orderExtensionFactory;
-        $this->setAddressPickupLocation = $setAddressPickupLocation;
-        $this->quoteAddressToOrderAddress = $quoteAddressToOrderAddress;
-        $this->orderAddressRepository = $orderAddressRepository;
-        $this->inventoryPickupLocationTableManager = $inventoryPickupLocationTableManager;
+        $this->logger                                           = $logger;
+        $this->cartRepository                                   = $cartRepository;
+        $this->getCarrierTitle                                  = $getCarrierTitle;
+        $this->sourceRepository                                 = $sourceRepository;
+        $this->orderExtensionFactory                            = $orderExtensionFactory;
+        $this->setAddressPickupLocation                         = $setAddressPickupLocation;
+        $this->quoteAddressToOrderAddress                       = $quoteAddressToOrderAddress;
+        $this->orderAddressRepository                           = $orderAddressRepository;
+        $this->inventoryPickupLocationTableManager              = $inventoryPickupLocationTableManager;
         $this->getShippingAddressBySourceCodeAndOriginalAddress = $getShippingAddressBySourceCodeAndOriginalAddress;
     }
 
@@ -112,7 +107,7 @@ class InStorePickupHandler implements ObserverInterface
                     return;
                 }
 
-                $shippingModel = $observer->getData('shipping_model');
+                $shippingModel      = $observer->getData('shipping_model');
                 $pickupLocationCode = $shippingModel->getPickUpStore() ?? '';
 
                 $this->changeQuoteAddressToPickupLocation($quote, $pickupLocationCode);
@@ -129,8 +124,9 @@ class InStorePickupHandler implements ObserverInterface
             } else {
                 $this->inventoryPickupLocationTableManager->removeRowByOrderId((int)$order->getEntityId());
 
-                $quoteShippingAddress = $quote->getShippingAddress();
-                $this->inventoryPickupLocationTableManager->removeRowByQuoteAddressId($quoteShippingAddress->getData('address_id') ?? 0);
+                $quoteShippingAddress   = $quote->getShippingAddress();
+                $quoteShippingAddressId = (int)$quoteShippingAddress->getData('address_id');
+                $this->inventoryPickupLocationTableManager->removeRowByQuoteAddressId($quoteShippingAddressId);
             }
         } catch (LocalizedException $localizedException) {
             $this->logger->alert($localizedException->getLogMessage());
@@ -160,7 +156,7 @@ class InStorePickupHandler implements ObserverInterface
         $quoteShippingAddress = $quote->getShippingAddress();
 
         try {
-            $source = $this->sourceRepository->get($pickupLocationCode);
+            $source                       = $this->sourceRepository->get($pickupLocationCode);
             $additionalAddressInformation = [
                 'address_type' => 'shipping',
                 'firstname'    => $source->getData('frontend_name') ?? $source->getName(),
@@ -175,7 +171,7 @@ class InStorePickupHandler implements ObserverInterface
         }
 
         $additionalAddressInformation['middlename'] = '';
-        $additionalAddressInformation['lastname'] = '';
+        $additionalAddressInformation['lastname']   = '';
 
         $shippingAddress = $this->quoteAddressToOrderAddress->convert(
             $quoteShippingAddress,
@@ -218,9 +214,9 @@ class InStorePickupHandler implements ObserverInterface
     private function getOrderShippingDescription(\Magento\Sales\Model\Order $order, string $pickupLocationCode): string
     {
         $carrierTitle = '';
-        $source = $this->sourceRepository->get($pickupLocationCode);
-        $sourceName = $source->getData('frontend_name') ?? $source->getName();
-        if(!empty($sourceName)) {
+        $source       = $this->sourceRepository->get($pickupLocationCode);
+        $sourceName   = $source->getData('frontend_name') ?? $source->getName();
+        if (!empty($sourceName)) {
             $carrierTitle = $this->getCarrierTitle->execute((int)$order->getStoreId());
         }
 
