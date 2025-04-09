@@ -34,7 +34,7 @@ class InventoryPickupLocationTableManager
      * @param int $id
      * @return void
      */
-    public function removeRowByOrderId(int $id)
+    public function removeRowByOrderId(int $id): void
     {
         if ($this->isValidId($id)) {
             $table = $this->connection->getTableName(self::INVENTORY_PICKUP_LOCATION_ORDER, self::CONNECTION_NAME);
@@ -47,7 +47,7 @@ class InventoryPickupLocationTableManager
      * @param int $id
      * @return void
      */
-    public function removeRowByQuoteAddressId(int $id)
+    public function removeRowByQuoteAddressId(int $id): void
     {
         if ($this->isValidId($id)) {
             $table =
@@ -62,13 +62,13 @@ class InventoryPickupLocationTableManager
      * @param array $where
      * @return void
      */
-    protected function removeFromTableById(string $table, array $where)
+    protected function removeFromTableById(string $table, array $where): void
     {
         $connection = $this->connection->getConnection(self::CONNECTION_NAME);
         $connection->delete($table, $where);
     }
 
-    protected function isValidId(int $id)
+    protected function isValidId(int $id): bool
     {
         return $id > 0;
     }
