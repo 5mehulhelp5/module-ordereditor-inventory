@@ -3,23 +3,24 @@
  * Copyright © MageWorx. All rights reserved.
  * See LICENSE.txt for license details.
  */
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace MageWorx\OrderEditorInventory\Model\Stock\ReturnProcessor;
 
+use Magento\Framework\Exception\LocalizedException;
+use Magento\InventoryApi\Api\GetSourceItemsBySkuInterface;
+use Magento\InventoryApi\Api\GetSourcesAssignedToStockOrderedByPriorityInterface;
+use Magento\InventoryCatalogApi\Api\DefaultSourceProviderInterface;
+use Magento\InventorySalesApi\Model\GetSkuFromOrderItemInterface;
+use Magento\InventorySalesApi\Model\ReturnProcessor\GetSourceDeductedOrderItemsInterface;
+use Magento\InventorySalesApi\Model\ReturnProcessor\Result\SourceDeductedOrderItemFactory;
+use Magento\InventorySalesApi\Model\ReturnProcessor\Result\SourceDeductedOrderItemsResult;
+use Magento\InventorySalesApi\Model\ReturnProcessor\Result\SourceDeductedOrderItemsResultFactory;
+use Magento\InventorySalesApi\Model\StockByWebsiteIdResolverInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Model\Order\Invoice as InvoiceModel;
 use Magento\Sales\Model\Order\Item as OrderItemModel;
-use Magento\InventorySalesApi\Model\GetSkuFromOrderItemInterface;
-use Magento\InventoryCatalogApi\Api\DefaultSourceProviderInterface;
-use Magento\InventoryApi\Api\GetSourceItemsBySkuInterface;
-use Magento\InventoryApi\Api\GetSourcesAssignedToStockOrderedByPriorityInterface;
-use Magento\InventorySalesApi\Model\StockByWebsiteIdResolverInterface;
-use Magento\Framework\Exception\LocalizedException;
-use Magento\InventorySalesApi\Model\ReturnProcessor\GetSourceDeductedOrderItemsInterface;
-use Magento\InventorySalesApi\Model\ReturnProcessor\Result\SourceDeductedOrderItemFactory;
-use Magento\InventorySalesApi\Model\ReturnProcessor\Result\SourceDeductedOrderItemsResultFactory;
-use Magento\InventorySalesApi\Model\ReturnProcessor\Result\SourceDeductedOrderItemsResult;
+use MageWorx\OrderEditor\Model\Order;
 
 class GetItemsToReturnPerSource implements GetSourceDeductedOrderItemsInterface
 {
@@ -68,21 +69,21 @@ class GetItemsToReturnPerSource implements GetSourceDeductedOrderItemsInterface
      * @param SourceDeductedOrderItemsResultFactory $sourceDeductedOrderItemsResultFactory
      */
     public function __construct(
-        GetSkuFromOrderItemInterface $getSkuFromOrderItem,
-        StockByWebsiteIdResolverInterface $stockByWebsiteIdResolver,
+        GetSkuFromOrderItemInterface                        $getSkuFromOrderItem,
+        StockByWebsiteIdResolverInterface                   $stockByWebsiteIdResolver,
         GetSourcesAssignedToStockOrderedByPriorityInterface $getSourcesAssignedToStockOrderedByPriority,
-        GetSourceItemsBySkuInterface $getSourceItemsBySku,
-        DefaultSourceProviderInterface $defaultSourceProvider,
-        SourceDeductedOrderItemFactory $sourceDeductedOrderItemFactory,
-        SourceDeductedOrderItemsResultFactory $sourceDeductedOrderItemsResultFactory
+        GetSourceItemsBySkuInterface                        $getSourceItemsBySku,
+        DefaultSourceProviderInterface                      $defaultSourceProvider,
+        SourceDeductedOrderItemFactory                      $sourceDeductedOrderItemFactory,
+        SourceDeductedOrderItemsResultFactory               $sourceDeductedOrderItemsResultFactory
     ) {
-        $this->getSkuFromOrderItem = $getSkuFromOrderItem;
-        $this->stockByWebsiteIdResolver = $stockByWebsiteIdResolver;
+        $this->getSkuFromOrderItem                        = $getSkuFromOrderItem;
+        $this->stockByWebsiteIdResolver                   = $stockByWebsiteIdResolver;
         $this->getSourcesAssignedToStockOrderedByPriority = $getSourcesAssignedToStockOrderedByPriority;
-        $this->getSourceItemsBySku = $getSourceItemsBySku;
-        $this->defaultSourceProvider = $defaultSourceProvider;
-        $this->sourceDeductedOrderItemFactory = $sourceDeductedOrderItemFactory;
-        $this->sourceDeductedOrderItemsResultFactory = $sourceDeductedOrderItemsResultFactory;
+        $this->getSourceItemsBySku                        = $getSourceItemsBySku;
+        $this->defaultSourceProvider                      = $defaultSourceProvider;
+        $this->sourceDeductedOrderItemFactory             = $sourceDeductedOrderItemFactory;
+        $this->sourceDeductedOrderItemsResultFactory      = $sourceDeductedOrderItemsResultFactory;
     }
 
     /**
@@ -95,7 +96,7 @@ class GetItemsToReturnPerSource implements GetSourceDeductedOrderItemsInterface
     public function execute(OrderInterface $order, array $returnToStockItems): array
     {
         $invoicedItems = [];
-        if (!$order instanceof \MageWorx\OrderEditor\Model\Order) {
+        if (!$order instanceof Order) {
             return $invoicedItems; // do not touch regular orders
         }
 
@@ -104,7 +105,7 @@ class GetItemsToReturnPerSource implements GetSourceDeductedOrderItemsInterface
             foreach ($invoice->getItems() as $item) {
                 $orderItem = $item->getOrderItem();
                 if ($this->isValidItem($orderItem, $returnToStockItems)) {
-                    $itemSku = $this->getSkuFromOrderItem->execute($orderItem);
+                    $itemSku                 = $this->getSkuFromOrderItem->execute($orderItem);
                     $invoicedItems[$itemSku] = ($invoicedItems[$itemSku] ?? 0) + $item->getQty();
                 }
             }
@@ -112,6 +113,20 @@ class GetItemsToReturnPerSource implements GetSourceDeductedOrderItemsInterface
         $websiteId = (int)$order->getStore()->getWebsiteId();
 
         return $this->getSourceDeductedInvoiceItemsResult($invoicedItems, $websiteId);
+    }
+
+    /**
+     * Checks valid item
+     *
+     * @param OrderItemModel $orderItem
+     * @param array $returnToStockItems
+     * @return bool
+     */
+    private function isValidItem(OrderItemModel $orderItem, array $returnToStockItems): bool
+    {
+        return (in_array($orderItem->getId(), $returnToStockItems)
+                || in_array($orderItem->getParentItemId(), $returnToStockItems))
+            && !$orderItem->isDummy();
     }
 
     /**
@@ -124,20 +139,25 @@ class GetItemsToReturnPerSource implements GetSourceDeductedOrderItemsInterface
     private function getSourceDeductedInvoiceItemsResult(array $invoicedItems, int $websiteId): array
     {
         $invoicedItemsToReturn = $result = [];
-        $stockId = (int)$this->stockByWebsiteIdResolver->execute($websiteId)->getStockId();
+        $stockId               = (int)$this->stockByWebsiteIdResolver->execute($websiteId)->getStockId();
         foreach ($invoicedItems as $sku => $qty) {
-            $sourceCode = $this->getSourceCodeWithHighestPriorityBySku((string)$sku, $stockId);
-            $invoicedItemsToReturn[$sourceCode][] = $this->sourceDeductedOrderItemFactory->create([
-                                                                                                      'sku' => $sku,
-                                                                                                      'quantity' => $qty
-                                                                                                  ]);
+            $sourceCode                           =
+                $this->getSourceCodeWithHighestPriorityBySku((string)$sku, $stockId);
+            $invoicedItemsToReturn[$sourceCode][] = $this->sourceDeductedOrderItemFactory->create(
+                [
+                    'sku'      => $sku,
+                    'quantity' => $qty
+                ]
+            );
         }
 
         foreach ($invoicedItemsToReturn as $sourceCode => $items) {
-            $result[] = $this->sourceDeductedOrderItemsResultFactory->create([
-                                                                                 'sourceCode' => $sourceCode,
-                                                                                 'items' => $items
-                                                                             ]);
+            $result[] = $this->sourceDeductedOrderItemsResultFactory->create(
+                [
+                    'sourceCode' => $sourceCode,
+                    'items'      => $items
+                ]
+            );
         }
 
         return $result;
@@ -155,7 +175,7 @@ class GetItemsToReturnPerSource implements GetSourceDeductedOrderItemsInterface
         $sourceCode = $this->defaultSourceProvider->getCode();
         try {
             $availableSourcesForProduct = $this->getSourceItemsBySku->execute($sku);
-            $assignedSourcesToStock = $this->getSourcesAssignedToStockOrderedByPriority->execute($stockId);
+            $assignedSourcesToStock     = $this->getSourcesAssignedToStockOrderedByPriority->execute($stockId);
             foreach ($assignedSourcesToStock as $assignedSource) {
                 foreach ($availableSourcesForProduct as $availableSource) {
                     if ($assignedSource->getSourceCode() == $availableSource->getSourceCode()) {
@@ -170,19 +190,5 @@ class GetItemsToReturnPerSource implements GetSourceDeductedOrderItemsInterface
         }
 
         return $sourceCode;
-    }
-
-    /**
-     * Checks valid item
-     *
-     * @param OrderItemModel $orderItem
-     * @param array $returnToStockItems
-     * @return bool
-     */
-    private function isValidItem(OrderItemModel $orderItem, array $returnToStockItems): bool
-    {
-        return (in_array($orderItem->getId(), $returnToStockItems)
-                || in_array($orderItem->getParentItemId(), $returnToStockItems))
-            && !$orderItem->isDummy();
     }
 }

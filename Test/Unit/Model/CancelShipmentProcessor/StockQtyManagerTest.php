@@ -6,11 +6,15 @@
 
 namespace MageWorx\OrderEditorInventory\Test\Unit\Model\CancelShipmentProcessor;
 
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\TestFramework\Unit\Helper\ObjectManager as ObjectManagerHelper;
+use Magento\Sales\Api\Data\ShipmentInterface;
 use MageWorx\OrderEditorInventory\Model\Stock\ReturnProcessor\CancelShipmentProcessor;
 use MageWorx\OrderEditorInventory\Model\StockQtyManager;
+use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\TestCase;
 
-class StockQtyManagerTest extends \PHPUnit\Framework\TestCase
+class StockQtyManagerTest extends TestCase
 {
     /**
      * @var ObjectManagerHelper
@@ -28,7 +32,7 @@ class StockQtyManagerTest extends \PHPUnit\Framework\TestCase
     private $stockQtyManager;
 
     /**
-     * @var CancelShipmentProcessor|\PHPUnit\Framework\MockObject\MockObject
+     * @var CancelShipmentProcessor|MockObject
      */
     private $processCancelledShipmentItemsMock;
 
@@ -52,12 +56,12 @@ class StockQtyManagerTest extends \PHPUnit\Framework\TestCase
      * Test that stockQtyManager call the execute method of cancel shipment processor just once and
      * did not thrown an exception.
      *
-     * @throws \Magento\Framework\Exception\LocalizedException
+     * @throws LocalizedException
      */
     public function testCancelShipmentWorks()
     {
         $shipment = $this->getMockBuilder(
-            \Magento\Sales\Api\Data\ShipmentInterface::class
+            ShipmentInterface::class
         )->disableOriginalConstructor()
                          ->getMock();
 

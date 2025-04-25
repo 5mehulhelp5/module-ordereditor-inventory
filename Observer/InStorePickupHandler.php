@@ -22,6 +22,7 @@ use Magento\Quote\Model\Quote\Address\ToOrderAddress as ToOrderAddressConverter;
 use Magento\Sales\Api\Data\OrderExtensionFactory;
 use Magento\Sales\Api\OrderAddressRepositoryInterface;
 use Magento\Sales\Model\Order;
+use Magento\Store\Model\Store;
 use MageWorx\OrderEditorInventory\Model\InventoryPickupLocationTableManager;
 use Psr\Log\LoggerInterface;
 
@@ -30,7 +31,7 @@ use Psr\Log\LoggerInterface;
  */
 class InStorePickupHandler implements ObserverInterface
 {
-    private ?\Magento\Store\Model\Store $store = null;
+    private ?Store $store = null;
 
     private LoggerInterface                                  $logger;
     private GetCarrierTitle                                  $getCarrierTitle;
@@ -95,7 +96,7 @@ class InStorePickupHandler implements ObserverInterface
              * @var \MageWorx\OrderEditor\Model\Order $order
              */
             $order = $observer->getData('order');
-            if (!is_a($order, \Magento\Sales\Model\Order::class)) {
+            if (!is_a($order, Order::class)) {
                 return;
             }
 
@@ -203,15 +204,10 @@ class InStorePickupHandler implements ObserverInterface
         $order->setExtensionAttributes($extension);
     }
 
-    public function getShippingDescription(string $carrierName, string $methodName): string
-    {
-        return $carrierName . ' - ' . $methodName;
-    }
-
     /**
      * @throws NoSuchEntityException
      */
-    private function getOrderShippingDescription(\Magento\Sales\Model\Order $order, string $pickupLocationCode): string
+    private function getOrderShippingDescription(Order $order, string $pickupLocationCode): string
     {
         $carrierTitle = '';
         $source       = $this->sourceRepository->get($pickupLocationCode);
@@ -225,5 +221,10 @@ class InStorePickupHandler implements ObserverInterface
         }
 
         return $this->getShippingDescription($carrierTitle, $sourceName);
+    }
+
+    public function getShippingDescription(string $carrierName, string $methodName): string
+    {
+        return $carrierName . ' - ' . $methodName;
     }
 }
