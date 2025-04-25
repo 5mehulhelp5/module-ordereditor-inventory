@@ -6,12 +6,14 @@
 
 namespace MageWorx\OrderEditorInventory\Api;
 
+use Magento\Sales\Api\Data\ShipmentInterface;
+
 interface CancelShipmentProcessorInterface
 {
     /**
      * Return all shipped items to stock (cancel shipment)
      *
-     * @param \Magento\Sales\Api\Data\ShipmentInterface $shipment
+     * @param ShipmentInterface $shipment
      */
-    public function execute(\Magento\Sales\Api\Data\ShipmentInterface $shipment): void;
+    public function execute(ShipmentInterface $shipment): void;
 }

@@ -15,7 +15,7 @@ use MageWorx\OrderEditor\Model\Order\OrderRepository;
 class SavePickupLocationForOrderPlugin
 {
     private SaveOrderPickupLocation $saveOrderPickupLocation;
-    private GetPickupLocationCode $getPickupLocationCode;
+    private GetPickupLocationCode   $getPickupLocationCode;
 
     /**
      * @param SaveOrderPickupLocation $saveOrderPickupLocation
@@ -23,10 +23,10 @@ class SavePickupLocationForOrderPlugin
      */
     public function __construct(
         SaveOrderPickupLocation $saveOrderPickupLocation,
-        GetPickupLocationCode $getPickupLocationCode
+        GetPickupLocationCode   $getPickupLocationCode
     ) {
         $this->saveOrderPickupLocation = $saveOrderPickupLocation;
-        $this->getPickupLocationCode = $getPickupLocationCode;
+        $this->getPickupLocationCode   = $getPickupLocationCode;
     }
 
     /**

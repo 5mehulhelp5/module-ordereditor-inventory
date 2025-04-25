@@ -42,18 +42,9 @@ class InventoryPickupLocationTableManager
         }
     }
 
-    /**
-     * Deletes one record by its id from inventory_pickup_location_quote_address table
-     * @param int $id
-     * @return void
-     */
-    public function removeRowByQuoteAddressId(int $id): void
+    protected function isValidId(int $id): bool
     {
-        if ($this->isValidId($id)) {
-            $table =
-                $this->connection->getTableName(self::INVENTORY_PICKUP_LOCATION_QUOTE_ADDRESS, self::CONNECTION_NAME);
-            $this->removeFromTableById($table, ['address_id = ?' => $id]);
-        }
+        return $id > 0;
     }
 
     /**
@@ -68,8 +59,17 @@ class InventoryPickupLocationTableManager
         $connection->delete($table, $where);
     }
 
-    protected function isValidId(int $id): bool
+    /**
+     * Deletes one record by its id from inventory_pickup_location_quote_address table
+     * @param int $id
+     * @return void
+     */
+    public function removeRowByQuoteAddressId(int $id): void
     {
-        return $id > 0;
+        if ($this->isValidId($id)) {
+            $table =
+                $this->connection->getTableName(self::INVENTORY_PICKUP_LOCATION_QUOTE_ADDRESS, self::CONNECTION_NAME);
+            $this->removeFromTableById($table, ['address_id = ?' => $id]);
+        }
     }
 }

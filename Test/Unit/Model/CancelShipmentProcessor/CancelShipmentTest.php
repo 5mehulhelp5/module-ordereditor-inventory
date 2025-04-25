@@ -6,10 +6,13 @@
 
 namespace MageWorx\OrderEditorInventory\Test\Unit\Model\CancelShipmentProcessor;
 
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\TestFramework\Unit\Helper\ObjectManager as ObjectManagerHelper;
+use Magento\Sales\Model\Order\Shipment;
 use MageWorx\OrderEditorInventory\Model\Stock\ReturnProcessor\CancelShipmentProcessor;
+use PHPUnit\Framework\TestCase;
 
-class CancelShipmentTest extends \PHPUnit\Framework\TestCase
+class CancelShipmentTest extends TestCase
 {
     /**
      * @var ObjectManagerHelper
@@ -40,12 +43,12 @@ class CancelShipmentTest extends \PHPUnit\Framework\TestCase
      * Test that cancelShipment method returns nothing with empty items in shipment
      * and did not thrown an exception.
      *
-     * @throws \Magento\Framework\Exception\LocalizedException
+     * @throws LocalizedException
      */
     public function testCancelShipmentWorksWithEmptyItems()
     {
         $shipment = $this->getMockBuilder(
-            \Magento\Sales\Model\Order\Shipment::class
+            Shipment::class
         )->disableOriginalConstructor()
                          ->getMock();
 

@@ -3,24 +3,27 @@
  * Copyright © MageWorx. All rights reserved.
  * See LICENSE.txt for license details.
  */
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace MageWorx\OrderEditorInventory\Model\Order;
 
+use Magento\Framework\DB\TransactionFactory;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Registry;
 use Magento\InventorySalesApi\Model\GetSkuFromOrderItemInterface;
-use Magento\Sales\Api\ShipmentRepositoryInterface;
-use Magento\Sales\Model\Order as OriginalOrder;
-use MageWorx\OrderEditor\Model\Config\Source\Shipments\UpdateMode;
-use MageWorx\OrderEditor\Helper\Data as Helper;
-use Magento\Shipping\Controller\Adminhtml\Order\ShipmentLoaderFactory;
-use MageWorx\OrderEditor\Api\OrderRepositoryInterface;
+use Magento\Sales\Api\OrderPaymentRepositoryInterface;
 use Magento\Sales\Api\OrderRepositoryInterface as OriginalOrderRepositoryInterface;
 use Magento\Sales\Api\OrderRepositoryInterfaceFactory as OriginalOrderRepositoryInterfaceFactory;
+use Magento\Sales\Api\ShipmentRepositoryInterface;
+use Magento\Sales\Model\Order as OriginalOrder;
+use Magento\Sales\Model\Order\Shipment;
+use Magento\Shipping\Controller\Adminhtml\Order\ShipmentLoaderFactory;
 use MageWorx\OrderEditor\Api\OrderItemRepositoryInterface;
-use Magento\Sales\Api\OrderPaymentRepositoryInterface;
-use Magento\Framework\DB\TransactionFactory;
-use Magento\Framework\Registry;
+use MageWorx\OrderEditor\Api\OrderRepositoryInterface;
+use MageWorx\OrderEditor\Api\ShipmentManagerInterface;
+use MageWorx\OrderEditor\Helper\Data as Helper;
+use MageWorx\OrderEditor\Model\Config\Source\Shipments\UpdateMode;
+use MageWorx\OrderEditor\Model\Order;
 use MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface;
 
 /**
@@ -28,7 +31,7 @@ use MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface;
  *
  * Add or remove shipments for the order after edit
  */
-class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterface
+class ShipmentManager implements ShipmentManagerInterface
 {
     /**
      * @var Helper
@@ -112,18 +115,18 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
      * @param GetSkuFromOrderItemInterface $getSkuFromOrderItem
      */
     public function __construct(
-        Helper $helperData,
-        Registry $registry,
-        TransactionFactory $transactionFactory,
-        ShipmentLoaderFactory $shipmentLoaderFactory,
-        OrderRepositoryInterface $orderRepository,
-        ShipmentRepositoryInterface $shipmentRepository,
-        OrderItemRepositoryInterface $orderItemRepository,
-        OrderPaymentRepositoryInterface $orderPaymentRepository,
-        OriginalOrderRepositoryInterface $originalOrderRepository,
+        Helper                                  $helperData,
+        Registry                                $registry,
+        TransactionFactory                      $transactionFactory,
+        ShipmentLoaderFactory                   $shipmentLoaderFactory,
+        OrderRepositoryInterface                $orderRepository,
+        ShipmentRepositoryInterface             $shipmentRepository,
+        OrderItemRepositoryInterface            $orderItemRepository,
+        OrderPaymentRepositoryInterface         $orderPaymentRepository,
+        OriginalOrderRepositoryInterface        $originalOrderRepository,
         OriginalOrderRepositoryInterfaceFactory $originalOrderRepositoryFactory,
-        StockQtyManagerInterface $stockQtyManager,
-        GetSkuFromOrderItemInterface $getSkuFromOrderItem
+        StockQtyManagerInterface                $stockQtyManager,
+        GetSkuFromOrderItemInterface            $getSkuFromOrderItem
     ) {
         $this->helperData                     = $helperData;
         $this->registry                       = $registry;
@@ -144,8 +147,8 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
      * @throws LocalizedException
      */
     public function updateShipmentsOnOrderEdit(
-        \MageWorx\OrderEditor\Model\Order $order
-    ): \MageWorx\OrderEditor\Model\Order {
+        Order $order
+    ): Order {
         if ($order->hasShipments()) {
             $itemsBySourceCode = [];
             foreach ($order->getShipmentsCollection() as $shipment) {
@@ -210,14 +213,24 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
     }
 
     /**
-     * @param \MageWorx\OrderEditor\Model\Order $order
+     * @param Order $order
+     * @return bool
+     */
+    private function isOrderTotalIncreased(Order $order): bool
+    {
+        return ($order->hasItemsWithIncreasedQty() || $order->hasAddedItems())
+            && (!$order->hasItemsWithDecreasedQty() && !$order->hasRemovedItems());
+    }
+
+    /**
+     * @param Order $order
      * @return void
      * @throws LocalizedException
      */
-    private function removeAllShipments(\MageWorx\OrderEditor\Model\Order $order): void
+    private function removeAllShipments(Order $order): void
     {
         $shipments = $order->getShipmentsCollection();
-        /** @var \Magento\Sales\Model\Order\Shipment $shipment */
+        /** @var Shipment $shipment */
         foreach ($shipments as $shipment) {
             // Unregister by key to prevent exceptions (@see body of the load method)
             $this->registry->unregister('current_shipment');
@@ -257,14 +270,14 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
     }
 
     /**
-     * @param \MageWorx\OrderEditor\Model\Order $order
+     * @param Order $order
      * @param array $itemsBySourceCode
      * @return void
      * @throws LocalizedException
      */
     protected function createShipmentForOrder(
-        \MageWorx\OrderEditor\Model\Order $order,
-        array $itemsBySourceCode = []
+        Order $order,
+        array                             $itemsBySourceCode = []
     ): void {
         if ($order->canShip()) {
             foreach ($itemsBySourceCode as $sourceCode => $items) {
@@ -296,9 +309,9 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
      * @inheritdoc
      */
     private function getShipmentData(
-        \MageWorx\OrderEditor\Model\Order $order,
-        string $sourceCode,
-        array $items
+        Order $order,
+        string                            $sourceCode,
+        array                             $items
     ): array {
         $shipmentItems = [];
         foreach ($items as $item) {
@@ -318,15 +331,5 @@ class ShipmentManager implements \MageWorx\OrderEditor\Api\ShipmentManagerInterf
         }
 
         return count($shipmentItems) > 0 ? $shipmentItems : [];
-    }
-
-    /**
-     * @param \MageWorx\OrderEditor\Model\Order $order
-     * @return bool
-     */
-    private function isOrderTotalIncreased(\MageWorx\OrderEditor\Model\Order $order): bool
-    {
-        return ($order->hasItemsWithIncreasedQty() || $order->hasAddedItems())
-            && (!$order->hasItemsWithDecreasedQty() && !$order->hasRemovedItems());
     }
 }

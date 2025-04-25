@@ -3,10 +3,12 @@
  * Copyright © MageWorx. All rights reserved.
  * See LICENSE.txt for license details.
  */
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace MageWorx\OrderEditorInventory\Model;
 
+use Magento\Bundle\Model\Product\Type;
+use Magento\ConfigurableProduct\Model\Product\Type\Configurable;
 use Magento\Framework\Exception\CouldNotSaveException;
 use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;
@@ -14,7 +16,6 @@ use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\InventoryCatalogApi\Model\GetProductTypesBySkusInterface;
 use Magento\InventoryCatalogApi\Model\GetSkusByProductIdsInterface;
 use Magento\InventoryConfigurationApi\Model\IsSourceItemManagementAllowedForProductTypeInterface;
-use MageWorx\OrderEditorInventory\Model\CheckItemsQuantity;
 use Magento\InventorySalesApi\Api\Data\ItemToSellInterfaceFactory;
 use Magento\InventorySalesApi\Api\Data\SalesChannelInterface;
 use Magento\InventorySalesApi\Api\Data\SalesChannelInterfaceFactory;
@@ -144,22 +145,22 @@ class StockQtyManager implements StockQtyManagerInterface
      * @param CancelShipmentProcessorInterface $processCancelledShipmentItems
      */
     public function __construct(
-        PlaceReservationsForSalesEventInterface $placeReservationsForSalesEvent,
-        GetSkusByProductIdsInterface $getSkusByProductIds,
-        WebsiteRepositoryInterface $websiteRepository,
-        SalesChannelInterfaceFactory $salesChannelFactory,
-        SalesEventInterfaceFactory $salesEventFactory,
-        ItemToSellInterfaceFactory $itemsToSellFactory,
-        CheckItemsQuantity $checkItemsQuantity,
-        StockByWebsiteIdResolverInterface $stockByWebsiteIdResolver,
-        GetProductTypesBySkusInterface $getProductTypesBySkus,
+        PlaceReservationsForSalesEventInterface              $placeReservationsForSalesEvent,
+        GetSkusByProductIdsInterface                         $getSkusByProductIds,
+        WebsiteRepositoryInterface                           $websiteRepository,
+        SalesChannelInterfaceFactory                         $salesChannelFactory,
+        SalesEventInterfaceFactory                           $salesEventFactory,
+        ItemToSellInterfaceFactory                           $itemsToSellFactory,
+        CheckItemsQuantity                                   $checkItemsQuantity,
+        StockByWebsiteIdResolverInterface                    $stockByWebsiteIdResolver,
+        GetProductTypesBySkusInterface                       $getProductTypesBySkus,
         IsSourceItemManagementAllowedForProductTypeInterface $isSourceItemManagementAllowedForProductType,
-        SalesEventExtensionFactory $salesEventExtensionFactory,
-        GetSkuFromOrderItemInterface $getSkuFromOrderItem,
-        ItemsToRefundInterfaceFactory $itemsToRefundFactory,
-        ProcessRefundItemsInterface $processRefundItems,
-        OrderRepositoryInterface $orderRepository,
-        CancelShipmentProcessorInterface $processCancelledShipmentItems
+        SalesEventExtensionFactory                           $salesEventExtensionFactory,
+        GetSkuFromOrderItemInterface                         $getSkuFromOrderItem,
+        ItemsToRefundInterfaceFactory                        $itemsToRefundFactory,
+        ProcessRefundItemsInterface                          $processRefundItems,
+        OrderRepositoryInterface                             $orderRepository,
+        CancelShipmentProcessorInterface                     $processCancelledShipmentItems
     ) {
         $this->placeReservationsForSalesEvent              = $placeReservationsForSalesEvent;
         $this->getSkusByProductIds                         = $getSkusByProductIds;
@@ -187,11 +188,11 @@ class StockQtyManager implements StockQtyManagerInterface
      * @throws LocalizedException
      * @throws NoSuchEntityException
      */
-    public function deductQtyFromStock(OrderItem $orderItem, float $qty = null): void
+    public function deductQtyFromStock(OrderItem $orderItem, ?float $qty = null): void
     {
-        if ($orderItem->getProductType() === \Magento\ConfigurableProduct\Model\Product\Type\Configurable::TYPE_CODE) {
+        if ($orderItem->getProductType() === Configurable::TYPE_CODE) {
             $orderItems = $orderItem->getChildrenItems();
-        } elseif ($orderItem->getProductType() === \Magento\Bundle\Model\Product\Type::TYPE_CODE) {
+        } elseif ($orderItem->getProductType() === Type::TYPE_CODE) {
             $orderItems = $orderItem->getChildrenItems();
         } elseif ($orderItem->getParentItemId()) {
             return; // Do not deduct qty of child item manually
@@ -212,7 +213,7 @@ class StockQtyManager implements StockQtyManagerInterface
      * @throws LocalizedException
      * @throws NoSuchEntityException
      */
-    private function deduct(OrderItem $orderItem, float $qty = null): void
+    private function deduct(OrderItem $orderItem, ?float $qty = null): void
     {
         $order = $orderItem->getOrder();
         if (!$order || !$order->getId()) {
@@ -276,9 +277,28 @@ class StockQtyManager implements StockQtyManagerInterface
     }
 
     /**
+     * @param string $sku
+     * @param OrderItem $orderItem
+     * @return bool
+     */
+    private function isValidItem(string $sku, OrderItem $orderItem): bool
+    {
+        // Since simple products which are the part of a grouped product are saved in the database
+        // (table sales_order_item) with product type grouped, we manually change the type of
+        // product from grouped to simple which support source management.
+        $typeId = $orderItem->getProductType() === 'grouped' ? 'simple' : $orderItem->getProductType();
+
+        $productType = $typeId ?: $this->getProductTypesBySkus->execute(
+            [$sku]
+        )[$sku];
+
+        return $this->isSourceItemManagementAllowedForProductType->execute($productType);
+    }
+
+    /**
      * @inheritDoc
      */
-    public function returnQtyToStock(OrderItem $orderItem, float $qty = null): void
+    public function returnQtyToStock(OrderItem $orderItem, ?float $qty = null): void
     {
         // Similar with return items on creditmemo
         // @see \Magento\InventorySales\Plugin\SalesInventory\ProcessReturnQtyOnCreditMemoPlugin::aroundExecute()
@@ -287,9 +307,9 @@ class StockQtyManager implements StockQtyManagerInterface
             throw new InputException(__('Order Id must be set before processing order item'));
         }
 
-        if ($orderItem->getProductType() === \Magento\ConfigurableProduct\Model\Product\Type\Configurable::TYPE_CODE) {
+        if ($orderItem->getProductType() === Configurable::TYPE_CODE) {
             $items = $orderItem->getChildrenItems();
-        } elseif ($orderItem->getProductType() === \Magento\Bundle\Model\Product\Type::TYPE_CODE) {
+        } elseif ($orderItem->getProductType() === Type::TYPE_CODE) {
             $items = $orderItem->getChildrenItems();
         } else {
             $items = [$orderItem];
@@ -305,7 +325,7 @@ class StockQtyManager implements StockQtyManagerInterface
      * @param OrderInterface $order
      * @param float|null $qty
      */
-    private function returnItems(array $items, OrderInterface $order, float $qty = null): void
+    private function returnItems(array $items, OrderInterface $order, ?float $qty = null): void
     {
         $itemsToRefund = $refundedOrderItemIds = [];
 
@@ -345,24 +365,5 @@ class StockQtyManager implements StockQtyManagerInterface
     public function cancelShipment(ShipmentInterface $shipment): void
     {
         $this->processCancelledShipmentItems->execute($shipment);
-    }
-
-    /**
-     * @param string $sku
-     * @param OrderItem $orderItem
-     * @return bool
-     */
-    private function isValidItem(string $sku, OrderItem $orderItem): bool
-    {
-        // Since simple products which are the part of a grouped product are saved in the database
-        // (table sales_order_item) with product type grouped, we manually change the type of
-        // product from grouped to simple which support source management.
-        $typeId = $orderItem->getProductType() === 'grouped' ? 'simple' : $orderItem->getProductType();
-
-        $productType = $typeId ?: $this->getProductTypesBySkus->execute(
-            [$sku]
-        )[$sku];
-
-        return $this->isSourceItemManagementAllowedForProductType->execute($productType);
     }
 }

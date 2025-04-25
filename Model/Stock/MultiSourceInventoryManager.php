@@ -3,24 +3,28 @@
  * Copyright © MageWorx. All rights reserved.
  * See LICENSE.txt for license details.
  */
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace MageWorx\OrderEditorInventory\Model\Stock;
 
-class MultiSourceInventoryManager implements \MageWorx\OrderEditor\Api\StockManagerInterface
+use Magento\Sales\Api\Data\OrderItemInterface;
+use MageWorx\OrderEditor\Api\StockManagerInterface;
+use MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface;
+
+class MultiSourceInventoryManager implements StockManagerInterface
 {
     /**
-     * @var \MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface
+     * @var StockQtyManagerInterface
      */
     private $stockQtyManager;
 
     /**
      * MultiSourceInventoryManager constructor.
      *
-     * @param \MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface $stockQtyManager
+     * @param StockQtyManagerInterface $stockQtyManager
      */
     public function __construct(
-        \MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface $stockQtyManager
+        StockQtyManagerInterface $stockQtyManager
     ) {
         $this->stockQtyManager = $stockQtyManager;
     }
@@ -28,7 +32,7 @@ class MultiSourceInventoryManager implements \MageWorx\OrderEditor\Api\StockMana
     /**
      * @inheritDoc
      */
-    public function registerReturn(\Magento\Sales\Api\Data\OrderItemInterface $item, float $qty): void
+    public function registerReturn(OrderItemInterface $item, float $qty): void
     {
         $this->stockQtyManager->returnQtyToStock($item, $qty);
     }
@@ -44,7 +48,7 @@ class MultiSourceInventoryManager implements \MageWorx\OrderEditor\Api\StockMana
     /**
      * @inheritDoc
      */
-    public function registerSale(\Magento\Sales\Api\Data\OrderItemInterface $item, float $qty): void
+    public function registerSale(OrderItemInterface $item, float $qty): void
     {
         $this->stockQtyManager->deductQtyFromStock($item, $qty);
     }

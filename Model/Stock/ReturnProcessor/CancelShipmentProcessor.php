@@ -10,26 +10,29 @@ namespace MageWorx\OrderEditorInventory\Model\Stock\ReturnProcessor;
 use Magento\Framework\Exception\CouldNotSaveException;
 use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\Validation\ValidationException;
+use Magento\InventoryApi\Api\SourceItemsSaveInterface;
+use Magento\InventorySalesApi\Api\Data\ItemToSellInterfaceFactory;
+use Magento\InventorySalesApi\Api\Data\SalesChannelInterface;
+use Magento\InventorySalesApi\Api\Data\SalesChannelInterfaceFactory;
+use Magento\InventorySalesApi\Api\Data\SalesEventExtensionFactory;
 use Magento\InventorySalesApi\Api\Data\SalesEventExtensionInterface;
 use Magento\InventorySalesApi\Api\Data\SalesEventInterface;
-use Magento\InventorySalesApi\Api\Data\ItemToSellInterfaceFactory;
 use Magento\InventorySalesApi\Api\Data\SalesEventInterfaceFactory;
-use Magento\InventorySalesApi\Api\Data\SalesEventExtensionFactory;
 use Magento\InventorySalesApi\Api\PlaceReservationsForSalesEventInterface;
 use Magento\InventorySourceDeductionApi\Model\GetSourceItemBySourceCodeAndSku;
+use Magento\Sales\Api\Data\OrderInterface;
+use Magento\Sales\Api\Data\ShipmentExtension;
 use Magento\Sales\Api\Data\ShipmentInterface;
 use Magento\Sales\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
-use Magento\InventoryApi\Api\SourceItemsSaveInterface;
 use Magento\Sales\Model\Order\Shipment\Item as ShipmentItem;
-use Psr\Log\LoggerInterface;
-use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Store\Api\WebsiteRepositoryInterface;
-use Magento\InventorySalesApi\Api\Data\SalesChannelInterfaceFactory;
-use Magento\InventorySalesApi\Api\Data\SalesChannelInterface;
+use MageWorx\OrderEditorInventory\Api\CancelShipmentProcessorInterface;
+use Psr\Log\LoggerInterface;
 
-class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\CancelShipmentProcessorInterface
+class CancelShipmentProcessor implements CancelShipmentProcessorInterface
 {
     /**
      * @var SalesEventInterfaceFactory
@@ -100,17 +103,17 @@ class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\Canc
      * @param LoggerInterface $logger
      */
     public function __construct(
-        SalesEventInterfaceFactory $salesEventFactory,
-        ItemToSellInterfaceFactory $itemsToSellFactory,
+        SalesEventInterfaceFactory              $salesEventFactory,
+        ItemToSellInterfaceFactory              $itemsToSellFactory,
         PlaceReservationsForSalesEventInterface $placeReservationsForSalesEvent,
-        SalesEventExtensionFactory $salesEventExtensionFactory,
-        OrderItemRepositoryInterface $orderItemRepository,
-        OrderRepositoryInterface $orderRepository,
-        SourceItemsSaveInterface $sourceItemsSave,
-        GetSourceItemBySourceCodeAndSku $getSourceItemBySourceCodeAndSku,
-        SalesChannelInterfaceFactory $salesChannelFactory,
-        WebsiteRepositoryInterface $websiteRepository,
-        LoggerInterface $logger
+        SalesEventExtensionFactory              $salesEventExtensionFactory,
+        OrderItemRepositoryInterface            $orderItemRepository,
+        OrderRepositoryInterface                $orderRepository,
+        SourceItemsSaveInterface                $sourceItemsSave,
+        GetSourceItemBySourceCodeAndSku         $getSourceItemBySourceCodeAndSku,
+        SalesChannelInterfaceFactory            $salesChannelFactory,
+        WebsiteRepositoryInterface              $websiteRepository,
+        LoggerInterface                         $logger
     ) {
         $this->salesEventFactory               = $salesEventFactory;
         $this->itemsToSellFactory              = $itemsToSellFactory;
@@ -141,7 +144,7 @@ class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\Canc
         foreach ($shipmentItems as $shipmentItem) {
             $sourceCode = null;
             /**
-             * @var \Magento\Sales\Api\Data\ShipmentExtension|null $extensionAttributes
+             * @var ShipmentExtension|null $extensionAttributes
              */
             $extensionAttributes = $shipment->getExtensionAttributes();
             if (!is_null($extensionAttributes)) {
@@ -188,7 +191,7 @@ class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\Canc
                 }
             } catch (CouldNotSaveException $e) {
                 $this->logger->error($e->getLogMessage());
-            } catch (InputException | ValidationException $e) {
+            } catch (InputException|ValidationException $e) {
                 $this->logger->notice($e->getLogMessage());
             }
         }
@@ -231,7 +234,7 @@ class CancelShipmentProcessor implements \MageWorx\OrderEditorInventory\Api\Canc
     /**
      * @param OrderInterface $order
      * @return SalesChannelInterface
-     * @throws \Magento\Framework\Exception\NoSuchEntityException
+     * @throws NoSuchEntityException
      */
     private function getSalesChannelForOrder(OrderInterface $order): SalesChannelInterface
     {
