@@ -15,6 +15,12 @@
             <argument name="stockManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Stock\MultiSourceInventoryManager</argument>
         </arguments>
     </type>
+    <!-- Inject MSI stock manager into the new StockService -->
+    <type name="MageWorx\OrderEditor\Model\Order\Item\StockService">
+        <arguments>
+            <argument name="stockManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Stock\MultiSourceInventoryManager</argument>
+        </arguments>
+    </type>
     <!-- Support for editing the order pickup location -->
     <type name="MageWorx\OrderEditor\Model\Order\OrderRepository">
         <plugin name="MageWorx_OrderEditor::SavePickupLocationForOrder"
@@ -30,7 +36,7 @@
         </arguments>
     </type>
     <!-- Shipment manager with MSI support -->
-    <type name="MageWorx\OrderEditor\Model\Order\Sales">
+    <type name="MageWorx\OrderEditor\Model\Order\SalesProcessor\DeleteAndCreateSalesProcessor">
         <arguments>
             <argument name="shipmentManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Order\ShipmentManager</argument>
         </arguments>
