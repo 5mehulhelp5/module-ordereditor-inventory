@@ -160,86 +160,107 @@ class MultiSourceInventoryManagerTest extends TestCase
     }
 
     /**
-     * Roadmap §4.2.3 — when called with negative qty AND an order context,
-     * the swapped-in SKU must get paired reservations
-     * (ORDER_PLACED -|qty| + SHIPMENT_CREATED +|qty|).
+     * Roadmap §4.2.6 — when called with negative qty AND an order context,
+     * places ONE reservation (ORDER_PLACED -qty) on the new SKU; does NOT
+     * touch the source_item (no physical event yet, only logical swap of
+     * the pending portion).
      */
-    public function testRegisterReturnByProductIdPlacesPairedReservationsOnDeductWithOrder(): void
+    public function testRegisterReturnByProductIdPlacesOrderPlacedReservationOnDeductWithOrder(): void
     {
-        $this->setUpEnabledSource('MH09-XL-Blue', 87.0);
+        $this->getSkusByProductIds->method('execute')->willReturn([254 => 'MH09-XL-Blue']);
         $order = $this->createOrderMock(210, 'ORD-26-04-28-150');
         $this->setUpWebsite(1, 'base');
 
-        // 4 factory calls: salesChannel, extension, ORDER_PLACED event, SHIPMENT_CREATED event
+        // No source_item update in configure-swap mode
+        $this->getSourceItemsBySku->expects($this->never())->method('execute');
+        $this->sourceItemsSave->expects($this->never())->method('execute');
+
         $this->salesChannelFactory->expects($this->once())->method('create')
             ->willReturn($this->createMock(\Magento\InventorySalesApi\Api\Data\SalesChannelInterface::class));
         $this->salesEventExtensionFactory->expects($this->once())->method('create')
             ->willReturn($this->createMock(SalesEventExtensionInterface::class));
 
+        // ONE event: ORDER_PLACED only (no SHIPMENT_CREATED — pending isn't shipped yet)
         $orderPlacedEvent = $this->createMock(SalesEventInterface::class);
-        $shipmentEvent    = $this->createMock(SalesEventInterface::class);
-        $this->salesEventFactory->expects($this->exactly(2))->method('create')
-            ->willReturnOnConsecutiveCalls($orderPlacedEvent, $shipmentEvent);
+        $this->salesEventFactory->expects($this->once())->method('create')
+            ->with(self::callback(fn ($args) => ($args['type'] ?? null) === SalesEventInterface::EVENT_ORDER_PLACED))
+            ->willReturn($orderPlacedEvent);
 
-        // 2 ItemToSell: one for -2, one for +2
-        $itemToSellNegative = $this->createMock(\Magento\InventorySalesApi\Api\Data\ItemToSellInterface::class);
-        $itemToSellPositive = $this->createMock(\Magento\InventorySalesApi\Api\Data\ItemToSellInterface::class);
-        $factoryCalls = [];
-        $this->itemsToSellFactory->expects($this->exactly(2))->method('create')
-            ->willReturnCallback(function (array $args) use (&$factoryCalls, $itemToSellNegative, $itemToSellPositive) {
-                $factoryCalls[] = $args;
-                return $args['qty'] < 0 ? $itemToSellNegative : $itemToSellPositive;
-            });
+        $this->itemsToSellFactory->expects($this->once())->method('create')
+            ->with(self::callback(
+                fn ($args) => ($args['sku'] ?? null) === 'MH09-XL-Blue' && ($args['qty'] ?? null) === -2.0
+            ))
+            ->willReturn($this->createMock(\Magento\InventorySalesApi\Api\Data\ItemToSellInterface::class));
 
-        // placeReservationsForSalesEvent called twice: once for each event
-        $this->placeReservationsForSalesEvent->expects($this->exactly(2))->method('execute');
+        $this->placeReservationsForSalesEvent->expects($this->once())->method('execute');
 
         $this->manager->registerReturnByProductId(254, -2.0, 1, $order);
-
-        // Verify factory was called with correct sku/qty pairs
-        $this->assertCount(2, $factoryCalls);
-        $this->assertSame('MH09-XL-Blue', $factoryCalls[0]['sku']);
-        $this->assertSame(-2.0, $factoryCalls[0]['qty']);
-        $this->assertSame('MH09-XL-Blue', $factoryCalls[1]['sku']);
-        $this->assertSame(2.0, $factoryCalls[1]['qty']);
     }
 
     /**
-     * Without an order, no paired reservations — backward compat with old callers.
+     * Roadmap §4.2.6 — positive qty WITH order context releases the old SKU's
+     * pending reservation via ORDER_CANCELED event.
      */
-    public function testRegisterReturnByProductIdSkipsPairedReservationsWithoutOrder(): void
+    public function testRegisterReturnByProductIdPlacesOrderCanceledReservationOnReleaseWithOrder(): void
     {
-        $this->setUpEnabledSource('MH09-XL-Blue', 87.0);
-
-        $this->placeReservationsForSalesEvent->expects($this->never())->method('execute');
-        $this->salesChannelFactory->expects($this->never())->method('create');
-        $this->salesEventFactory->expects($this->never())->method('create');
-
-        $this->manager->registerReturnByProductId(254, -2.0, 1);
-    }
-
-    /**
-     * Positive qty (return case) does NOT create paired reservations even with order —
-     * the old SKU's existing reservations remain untouched (we don't manufacture
-     * compensation for them).
-     */
-    public function testRegisterReturnByProductIdSkipsPairedReservationsOnPositiveQty(): void
-    {
-        $this->setUpEnabledSource('MH09-L-Red', 98.0);
+        $this->getSkusByProductIds->method('execute')->willReturn([99 => 'MH09-L-Red']);
         $order = $this->createOrderMock(210, 'ORD-26-04-28-150');
+        $this->setUpWebsite(1, 'base');
 
-        $this->placeReservationsForSalesEvent->expects($this->never())->method('execute');
+        // No source_item update
+        $this->getSourceItemsBySku->expects($this->never())->method('execute');
+        $this->sourceItemsSave->expects($this->never())->method('execute');
+
+        $this->salesChannelFactory->method('create')
+            ->willReturn($this->createMock(\Magento\InventorySalesApi\Api\Data\SalesChannelInterface::class));
+        $this->salesEventExtensionFactory->method('create')
+            ->willReturn($this->createMock(SalesEventExtensionInterface::class));
+
+        // ORDER_CANCELED event for release (not ORDER_PLACED)
+        $this->salesEventFactory->expects($this->once())->method('create')
+            ->with(self::callback(fn ($args) => ($args['type'] ?? null) === 'order_canceled'))
+            ->willReturn($this->createMock(SalesEventInterface::class));
+
+        $this->itemsToSellFactory->expects($this->once())->method('create')
+            ->with(self::callback(
+                fn ($args) => ($args['sku'] ?? null) === 'MH09-L-Red' && ($args['qty'] ?? null) === 2.0
+            ))
+            ->willReturn($this->createMock(\Magento\InventorySalesApi\Api\Data\ItemToSellInterface::class));
+
+        $this->placeReservationsForSalesEvent->expects($this->once())->method('execute');
 
         $this->manager->registerReturnByProductId(99, 2.0, 1, $order);
     }
 
     /**
-     * Reservation creation failure must not abort the flow — source_item update
-     * (the user-visible part) has already happened.
+     * Without an order, no reservations — legacy mode falls through to direct
+     * source_item adjustment (BC for callers that pass only 3 args).
+     */
+    public function testRegisterReturnByProductIdLegacyModeWithoutOrder(): void
+    {
+        $this->getSkusByProductIds->method('execute')->willReturn([254 => 'MH09-XL-Blue']);
+        $enabled = $this->createMock(SourceItemInterface::class);
+        $enabled->method('getStatus')->willReturn(1);
+        $enabled->method('getQuantity')->willReturn(87.0);
+        $enabled->expects($this->once())->method('setQuantity')->with(85.0);
+        $this->getSourceItemsBySku->method('execute')->willReturn([$enabled]);
+        $this->sourceItemsSave->expects($this->once())->method('execute');
+
+        // No reservations created
+        $this->placeReservationsForSalesEvent->expects($this->never())->method('execute');
+        $this->salesChannelFactory->expects($this->never())->method('create');
+
+        $this->manager->registerReturnByProductId(254, -2.0, 1);
+    }
+
+    /**
+     * Reservation creation failure must not abort the Configure swap.
+     * Configure swap proceeds even if MSI hiccups; salable drift on the
+     * affected SKU is the worst outcome.
      */
     public function testRegisterReturnByProductIdSwallowsReservationException(): void
     {
-        $this->setUpEnabledSource('MH09-XL-Blue', 87.0);
+        $this->getSkusByProductIds->method('execute')->willReturn([254 => 'MH09-XL-Blue']);
         $order = $this->createOrderMock(210, 'ORD-26-04-28-150');
         $this->setUpWebsite(1, 'base');
 

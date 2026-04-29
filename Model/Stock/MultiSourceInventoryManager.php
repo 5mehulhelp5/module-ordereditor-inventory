@@ -60,18 +60,28 @@ class MultiSourceInventoryManager implements StockManagerInterface
     /**
      * Register stock adjustment by product ID.
      *
-     * Directly adjusts source item qty (physical stock).
-     * Salable qty updates automatically: salable = source_qty - sum(reservations).
+     * Two semantically different modes:
      *
-     * Positive qty = return to stock; negative qty = deduct from stock.
-     * Used when replacing a configurable child product during order edit (Configure action).
+     * 1. **Legacy mode** (`$order === null`) — direct source_item adjustment.
+     *    Positive qty = return to stock; negative = deduct. Used when there
+     *    is no order context (rare). Salable updates automatically.
      *
-     * When $order is provided AND $qty is negative (deduct case), also creates
-     * paired reservations for the new SKU mirroring the lifecycle of the
-     * original order item: ORDER_PLACED -|qty| + SHIPMENT_CREATED +|qty|
-     * (net = 0). Without these, downstream operations (cancel shipment, void,
-     * refund) misbehave for the swapped-in SKU because MSI has no record of
-     * the virtual order_placed event for it. See REFACTORING_ROADMAP.md §4.2.3.
+     * 2. **Configure-swap mode** (`$order !== null`) — reservation-only swap
+     *    of the *pending* portion of an order item between the old and new
+     *    child SKU. Caller is responsible for passing only the pending qty
+     *    (qty_ordered − qty_shipped). The shipped portion is already
+     *    physically with the customer under the old SKU and must NOT be
+     *    touched in inventory — touching it creates phantom inflation /
+     *    deflation. See REFACTORING_ROADMAP.md §4.2.6.
+     *
+     *    In this mode `inventory_source_item` is **not** modified — there
+     *    is no physical event yet, only a logical swap of which SKU the
+     *    pending qty is reserved against:
+     *      - Positive qty (release old SKU) → ORDER_CANCELED reservation
+     *        compensating the original order_placed.
+     *      - Negative qty (reserve new SKU) → ORDER_PLACED reservation.
+     *    A real shipment_created reservation will be added later by the
+     *    standard MSI flow when the user creates a shipment for the new SKU.
      */
     public function registerReturnByProductId(
         int $productId,
@@ -85,14 +95,17 @@ class MultiSourceInventoryManager implements StockManagerInterface
             return;
         }
 
+        if ($order !== null) {
+            // Configure-swap mode: reservation-only, no source_item touch.
+            $this->placeConfigureSwapReservation($order, $sku, $qty, $websiteId);
+            return;
+        }
+
+        // Legacy mode: direct source_item adjust.
         $sourceItems = $this->getSourceItemsBySku->execute($sku);
         if (empty($sourceItems)) {
             return;
         }
-
-        // Adjust the first enabled source item.
-        // For multi-source setups the correct approach is to identify the shipment source,
-        // but for order editing single-source is the common case.
         foreach ($sourceItems as $sourceItem) {
             if ((int) $sourceItem->getStatus() !== 1) {
                 continue;
@@ -102,30 +115,27 @@ class MultiSourceInventoryManager implements StockManagerInterface
             $this->sourceItemsSave->execute([$sourceItem]);
             break;
         }
-
-        // Pair reservations for the new SKU on deduct (Configure swap on shipped item).
-        if ($order !== null && $qty < 0) {
-            $this->placePairedReservationsForSwappedSku($order, $sku, abs($qty), $websiteId);
-        }
     }
 
     /**
-     * Create ORDER_PLACED -qty + SHIPMENT_CREATED +qty reservations for a SKU
-     * that was swapped in during a Configure operation on an already-shipped
-     * order item. Net effect on salable qty is zero (the source_item update
-     * above is what actually moves the needle), but the reservation records
-     * give MSI a complete lifecycle to reason about during cancel/void/refund.
+     * Create a single reservation reflecting one side of a Configure swap on
+     * the pending portion of an order item:
+     *  - $qty < 0  → ORDER_PLACED (reserves the new SKU's pending portion)
+     *  - $qty > 0  → ORDER_CANCELED (releases the old SKU's pending portion)
      *
-     * Errors are caught and ignored — failing to create reservations should
-     * not abort the order edit, since the source_item has already been
-     * updated (the user-visible part is correct).
+     * Errors are caught and ignored — Configure swap must not abort over an
+     * MSI hiccup; salable qty drift becomes visible at most for one SKU.
      */
-    private function placePairedReservationsForSwappedSku(
+    private function placeConfigureSwapReservation(
         OrderInterface $order,
         string $sku,
-        float $absQty,
+        float $qty,
         int $websiteId
     ): void {
+        if (abs($qty) < 0.00001) {
+            return;
+        }
+
         try {
             $websiteCode = $this->websiteRepository->getById($websiteId)->getCode();
             $salesChannel = $this->salesChannelFactory->create([
@@ -141,34 +151,27 @@ class MultiSourceInventoryManager implements StockManagerInterface
                 ],
             ]);
 
-            // ORDER_PLACED: -qty
-            $orderPlacedEvent = $this->salesEventFactory->create([
-                'type'       => SalesEventInterface::EVENT_ORDER_PLACED,
-                'objectType' => SalesEventInterface::OBJECT_TYPE_ORDER,
-                'objectId'   => (string) $order->getEntityId(),
-            ]);
-            $orderPlacedEvent->setExtensionAttributes($extension);
-            $this->placeReservationsForSalesEvent->execute(
-                [$this->itemsToSellFactory->create(['sku' => $sku, 'qty' => -$absQty])],
-                $salesChannel,
-                $orderPlacedEvent
-            );
+            // Negative qty = reserve new SKU under ORDER_PLACED.
+            // Positive qty = release old SKU under ORDER_CANCELED.
+            $eventType = $qty < 0
+                ? SalesEventInterface::EVENT_ORDER_PLACED
+                : 'order_canceled';
 
-            // SHIPMENT_CREATED: +qty (compensation for the deduct above)
-            $shipmentEvent = $this->salesEventFactory->create([
-                'type'       => 'shipment_created',
+            $salesEvent = $this->salesEventFactory->create([
+                'type'       => $eventType,
                 'objectType' => SalesEventInterface::OBJECT_TYPE_ORDER,
                 'objectId'   => (string) $order->getEntityId(),
             ]);
-            $shipmentEvent->setExtensionAttributes($extension);
+            $salesEvent->setExtensionAttributes($extension);
+
             $this->placeReservationsForSalesEvent->execute(
-                [$this->itemsToSellFactory->create(['sku' => $sku, 'qty' => $absQty])],
+                [$this->itemsToSellFactory->create(['sku' => $sku, 'qty' => $qty])],
                 $salesChannel,
-                $shipmentEvent
+                $salesEvent
             );
         } catch (\Throwable $e) {
-            // Non-fatal: source_item adjustment above is what users see.
-            // Reservations matter only for downstream cancel/void/refund.
+            // Non-fatal: Configure swap proceeds; missing reservation may show
+            // as small salable drift on this SKU only. Logged elsewhere by stock service.
         }
     }
 
