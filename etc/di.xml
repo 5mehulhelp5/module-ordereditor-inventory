@@ -10,6 +10,9 @@
                 type="MageWorx\OrderEditorInventory\Model\StockQtyManager"/>
     <preference for="MageWorx\OrderEditorInventory\Api\CancelShipmentProcessorInterface"
                 type="MageWorx\OrderEditorInventory\Model\Stock\ReturnProcessor\CancelShipmentProcessor"/>
+    <!-- Override the no-op fallback from OrderEditor with the real MSI exchange -->
+    <preference for="MageWorx\OrderEditor\Api\Stock\SwapPhysicalExchangeInterface"
+                type="MageWorx\OrderEditorInventory\Model\Stock\MsiSwapPhysicalExchange"/>
     <type name="MageWorx\OrderEditor\Model\Order\Item">
         <arguments>
             <argument name="stockManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Stock\MultiSourceInventoryManager</argument>
