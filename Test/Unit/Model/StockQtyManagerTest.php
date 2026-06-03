@@ -297,8 +297,7 @@ class StockQtyManagerTest extends TestCase
         $orderItem->method('getProductType')->willReturn('simple');
         $orderItem->method('getOrder')->willReturn($order);
         $orderItem->method('getItemId')->willReturn(99);
-        $orderItem->method('getQtyOrdered')->willReturn(5.0);
-        $orderItem->method('getQtyCanceled')->willReturn(1.0);
+        $orderItem->method('getQtyInvoiced')->willReturn(4.0);
         $orderItem->method('getQtyRefunded')->willReturn(2.0);
 
         $this->getSkuFromOrderItem->method('execute')->with($orderItem)->willReturn('sku-r');
@@ -308,9 +307,10 @@ class StockQtyManagerTest extends TestCase
                                    ->method('create')
                                    ->with(
                                        $this->callback(static function (array $data): bool {
+                                           // native formula: qtyInvoiced(4) - qtyRefunded(2) + returnQty(3) = 5
                                            return $data['sku'] === 'sku-r'
                                                && $data['qty'] === 3.0
-                                               && $data['processedQty'] === 2.0;
+                                               && $data['processedQty'] === 5.0;
                                        })
                                    )
                                    ->willReturn(

@@ -338,11 +338,17 @@ class StockQtyManager implements StockQtyManagerInterface
 
                 $qtyToReturn = abs($qty); // Qty to return
                 /**
-                 * Total items with currently returning qty
-                 * Overall qty without refunded before items
+                 * processedQty feeds the native Magento\InventorySalesApi
+                 * ProcessRefundItems consumer, which expects the same value the
+                 * native ProcessReturnQtyOnCreditMemoPlugin produces:
+                 *   qtyInvoiced - qtyRefunded + (currently returning qty).
+                 * The previous formula (qtyOrdered - qtyCanceled - qtyRefunded)
+                 * ignored qtyInvoiced and the current qty, so the source-vs-stock
+                 * split in ProcessRefundItems was wrong on partial-invoice orders.
                  */
-                $processedQty = /* @TODO: Qty ordered should be here? */
-                    $orderItem->getQtyOrdered() - $orderItem->getQtyCanceled() - $orderItem->getQtyRefunded(); // All qty before return
+                $processedQty = (float) $orderItem->getQtyInvoiced()
+                    - (float) $orderItem->getQtyRefunded()
+                    + $qtyToReturn;
 
                 $itemsToRefund[] = $this->itemsToRefundFactory->create(
                     [
