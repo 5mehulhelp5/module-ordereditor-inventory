@@ -38,8 +38,17 @@
             </argument>
         </arguments>
     </type>
-    <!-- Shipment manager with MSI support -->
+    <!-- Shipment manager with MSI support — must be injected into BOTH sales
+         processors. Without it a processor falls back to the non-MSI
+         ShipmentManager, whose removeAllShipments() deletes shipments without
+         returning stock, so a "delete & create new shipment" edit double-deducts
+         the still-shipped qty (source drift). -->
     <type name="MageWorx\OrderEditor\Model\Order\SalesProcessor\DeleteAndCreateSalesProcessor">
+        <arguments>
+            <argument name="shipmentManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Order\ShipmentManager</argument>
+        </arguments>
+    </type>
+    <type name="MageWorx\OrderEditor\Model\Order\SalesProcessor\KeepUntouchedSalesProcessor">
         <arguments>
             <argument name="shipmentManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Order\ShipmentManager</argument>
         </arguments>

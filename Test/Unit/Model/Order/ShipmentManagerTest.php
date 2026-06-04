@@ -22,6 +22,7 @@ use MageWorx\OrderEditor\Api\OrderRepositoryInterface;
 use MageWorx\OrderEditor\Helper\Data as Helper;
 use MageWorx\OrderEditor\Model\Config\Source\Shipments\UpdateMode;
 use MageWorx\OrderEditor\Model\Order;
+use MageWorx\OrderEditor\Model\StockDebugLogger;
 use MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface;
 use MageWorx\OrderEditorInventory\Model\Order\ShipmentManager;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -65,6 +66,9 @@ class ShipmentManagerTest extends TestCase
     /** @var GetSkuFromOrderItemInterface|MockObject */
     private $getSkuFromOrderItem;
 
+    /** @var StockDebugLogger|MockObject */
+    private $stockDebugLogger;
+
     private ShipmentManager $manager;
 
     protected function setUp(): void
@@ -81,6 +85,7 @@ class ShipmentManagerTest extends TestCase
         $this->originalOrderRepositoryFactory = $this->createMock(OriginalOrderRepositoryInterfaceFactory::class);
         $this->stockQtyManager                = $this->createMock(StockQtyManagerInterface::class);
         $this->getSkuFromOrderItem            = $this->createMock(GetSkuFromOrderItemInterface::class);
+        $this->stockDebugLogger               = $this->createMock(StockDebugLogger::class);
 
         $this->manager = new ShipmentManager(
             $this->helperData,
@@ -94,7 +99,8 @@ class ShipmentManagerTest extends TestCase
             $this->originalOrderRepository,
             $this->originalOrderRepositoryFactory,
             $this->stockQtyManager,
-            $this->getSkuFromOrderItem
+            $this->getSkuFromOrderItem,
+            $this->stockDebugLogger
         );
     }
 
