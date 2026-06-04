@@ -129,24 +129,33 @@ class ShipmentManagerTest extends TestCase
         $this->manager->updateShipmentsOnOrderEdit($order);
     }
 
-    public function testModeNothingWithRemovedItemsTriggersRemoveAll(): void
+    /**
+     * "Do not touch" must leave shipments alone even when items are removed —
+     * stock return is owned by the credit memo. (Injecting the MSI manager into
+     * KeepUntouched once made this branch delete shipments — a regression.)
+     */
+    public function testModeNothingDoesNotTouchShipmentsOnRemoval(): void
     {
         $order = $this->createOrderForMode(UpdateMode::MODE_UPDATE_NOTHING);
         $order->method('hasRemovedItems')->willReturn(true);
         $order->method('hasItemsWithDecreasedQty')->willReturn(false);
 
-        $this->expectRemoveAllShipmentsCalls($order);
+        $this->shipmentRepository->expects($this->never())->method('delete');
+        $this->stockQtyManager->expects($this->never())->method('cancelShipment');
+        $this->orderRepository->expects($this->never())->method('save');
 
         $this->manager->updateShipmentsOnOrderEdit($order);
     }
 
-    public function testModeNothingWithDecreasedQtyTriggersRemoveAll(): void
+    public function testModeNothingDoesNotTouchShipmentsOnDecrease(): void
     {
         $order = $this->createOrderForMode(UpdateMode::MODE_UPDATE_NOTHING);
         $order->method('hasRemovedItems')->willReturn(false);
         $order->method('hasItemsWithDecreasedQty')->willReturn(true);
 
-        $this->expectRemoveAllShipmentsCalls($order);
+        $this->shipmentRepository->expects($this->never())->method('delete');
+        $this->stockQtyManager->expects($this->never())->method('cancelShipment');
+        $this->orderRepository->expects($this->never())->method('save');
 
         $this->manager->updateShipmentsOnOrderEdit($order);
     }

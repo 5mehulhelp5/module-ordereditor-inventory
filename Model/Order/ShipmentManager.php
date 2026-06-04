@@ -213,11 +213,12 @@ class ShipmentManager implements ShipmentManagerInterface
                     $this->createShipmentForOrder($order, $itemsBySourceCode);
                     break;
                 case UpdateMode::MODE_UPDATE_NOTHING:
-                    if ($order->hasRemovedItems()
-                        || $order->hasItemsWithDecreasedQty()
-                    ) {
-                        $this->removeAllShipments($order);
-                    }
+                    // "Do not touch" — shipments are left exactly as they are (the
+                    // historical record of what was physically shipped). Stock return
+                    // on a decrease/removal is owned by the credit memo (back_to_stock).
+                    // Deleting shipments here would contradict the mode and, via
+                    // cancelShipment, double-move stock. (Matches the base non-MSI
+                    // ShipmentManager, whose NOTHING branch is a plain no-op.)
                     break;
             }
 
