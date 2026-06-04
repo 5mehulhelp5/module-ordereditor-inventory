@@ -103,6 +103,76 @@ class CancelShipmentTest extends TestCase
     }
 
     /**
+     * Add-new-shipment leaves several shipments (5 + 3). When all are cancelled in one
+     * pass the SHARED budget (qtyToShip = ordered 8 − refunded 2 = 6) must be split,
+     * not applied in full to each: shipment(5) returns 5, shipment(3) returns 1 → total 6,
+     * not 5 + 3 = 8 (which over-returns and inflates source).
+     */
+    public function testDistributesBudgetAcrossMultipleShipments(): void
+    {
+        $sku       = 'WH12-XL-Gray';
+        $qtyBefore = 96.0;
+
+        $orderItem = $this->createMock(OrderItem::class);
+        $orderItem->method('getQtyOrdered')->willReturn(8.0);
+        $orderItem->method('getQtyRefunded')->willReturn(2.0);
+        $orderItem->method('getQtyCanceled')->willReturn(0.0);
+
+        $orderItemRepository = $this->createMock(OrderItemRepositoryInterface::class);
+        $orderItemRepository->method('get')->with(618)->willReturn($orderItem);
+
+        // First shipment returns 5 (budget 6 → 1), second returns 1 (budget 1 → 0).
+        $source1 = $this->createMock(SourceItem::class);
+        $source1->method('getQuantity')->willReturn($qtyBefore);
+        $source1->expects($this->once())->method('setQuantity')->with($qtyBefore + 5.0);
+
+        $source2 = $this->createMock(SourceItem::class);
+        $source2->method('getQuantity')->willReturn($qtyBefore);
+        $source2->expects($this->once())->method('setQuantity')->with($qtyBefore + 1.0);
+
+        $getSourceItem = $this->createMock(GetSourceItemBySourceCodeAndSku::class);
+        $getSourceItem->method('execute')->with('default', $sku)
+            ->willReturnOnConsecutiveCalls($source1, $source2);
+
+        $sourceItemsSave = $this->createMock(SourceItemsSaveInterface::class);
+        $sourceItemsSave->method('execute')->willThrowException(new CouldNotSaveException(__('stop')));
+
+        $processor = $this->objectManagerHelper->getObject(
+            CancelShipmentProcessor::class,
+            [
+                'orderItemRepository'             => $orderItemRepository,
+                'getSourceItemBySourceCodeAndSku' => $getSourceItem,
+                'sourceItemsSave'                 => $sourceItemsSave,
+            ]
+        );
+
+        $budget = [];
+        $processor->execute($this->shipmentWithItem($sku, 5.0), $budget);
+        $processor->execute($this->shipmentWithItem($sku, 3.0), $budget);
+
+        self::assertSame(0.0, $budget[618], 'budget fully consumed across both shipments');
+    }
+
+    private function shipmentWithItem(string $sku, float $qty): Shipment
+    {
+        $ext = $this->createMock(ShipmentExtensionInterface::class);
+        $ext->method('getSourceCode')->willReturn('default');
+
+        $item = $this->createMock(ShipmentItem::class);
+        $item->method('getOrderItemId')->willReturn(618);
+        $item->method('getSku')->willReturn($sku);
+        $item->method('getQty')->willReturn($qty);
+
+        $shipment = $this->createMock(Shipment::class);
+        $shipment->method('getAllItems')->willReturn([$item]);
+        $shipment->method('getExtensionAttributes')->willReturn($ext);
+        $shipment->method('getOrderId')->willReturn(254);
+        $shipment->method('getEntityId')->willReturn(90);
+
+        return $shipment;
+    }
+
+    /**
      * Build the processor with controlled collaborators, run execute() and assert the
      * source quantity was bumped by exactly $expectedBack (qtyBefore + expectedBack).
      * sourceItemsSave is made to throw so the reservation path is skipped — the

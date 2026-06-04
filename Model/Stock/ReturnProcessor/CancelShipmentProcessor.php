@@ -142,7 +142,7 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
     /**
      * @inheritDoc
      */
-    public function execute(ShipmentInterface $shipment): void
+    public function execute(ShipmentInterface $shipment, array &$remainingByOrderItem = []): void
     {
         $this->stockDebugLogger->open('CancelShipmentProcessor::execute', [
             'shipment_id' => (int)$shipment->getEntityId(),
@@ -183,22 +183,34 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
                 continue;
             }
 
-            $orderItem = $this->orderItemRepository->get((int)$shipmentItem->getOrderItemId());
+            $orderItemId = (int)$shipmentItem->getOrderItemId();
+            $orderItem   = $this->orderItemRepository->get($orderItemId);
 
-            // Return only the still-shippable qty — the amount the recreated
-            // shipment will re-deduct — so the delete+recreate pair is stock-neutral.
-            // The refunded/canceled portions are returned by the credit memo / cancel
-            // flow, which stay their sole owners (avoids double return).
+            // Return only the still-shippable qty — the amount the recreated shipment
+            // will re-deduct — so the delete+recreate pair is stock-neutral; the
+            // refunded/canceled portions are returned by the credit memo / cancel flow
+            // (their sole owners), which avoids a double return.
             //
-            // Using the old shipment qty (or shipmentQty − refunded with the CUMULATIVE
-            // refunded) breaks on a SECOND edit: the old shipment qty is already reduced
-            // and qty_refunded is cumulative, so the math drifts. qtyToShip is derived
-            // from the order item and is correct across any number of sequential edits.
-            // Capped at the shipment qty (can't return more than this shipment moved).
-            $qtyToShip = (float)$orderItem->getQtyOrdered()
-                - (float)$orderItem->getQtyRefunded()
-                - (float)$orderItem->getQtyCanceled();
+            // qtyToShip is the TOTAL still-shippable qty for the order item and acts as
+            // a budget SHARED across every shipment of this order cancelled in one pass.
+            // An "Add new shipment" edit leaves several shipments (e.g. 5 + 3); without
+            // the shared budget each would return min(qtyToShip, shipmentQty) and the
+            // sum would exceed qtyToShip (over-return). The budget is initialized lazily
+            // per order item and decremented as each shipment returns its share, so the
+            // total returned equals qtyToShip regardless of how the qty is split.
+            // It is also derived from the order item (not the old shipment qty), so it
+            // stays correct across any number of sequential edits.
+            if (!array_key_exists($orderItemId, $remainingByOrderItem)) {
+                $remainingByOrderItem[$orderItemId] = max(
+                    (float)$orderItem->getQtyOrdered()
+                    - (float)$orderItem->getQtyRefunded()
+                    - (float)$orderItem->getQtyCanceled(),
+                    0.0
+                );
+            }
+            $qtyToShip = $remainingByOrderItem[$orderItemId];
             $backQty   = max(min($qtyToShip, (float)$shipmentItem->getQty()), 0.0);
+            $remainingByOrderItem[$orderItemId] = $qtyToShip - $backQty;
             $sku       = $shipmentItem->getSku();
 
             $sourceItem = $this->getSourceItemBySourceCodeAndSku->execute($sourceCode, $sku);
@@ -213,7 +225,8 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
                 'qty_ordered'      => (float)$orderItem->getQtyOrdered(),
                 'qty_refunded'     => (float)$orderItem->getQtyRefunded(),
                 'qty_canceled'     => (float)$orderItem->getQtyCanceled(),
-                'qty_to_ship'      => $qtyToShip,
+                'budget_used'      => $qtyToShip,
+                'budget_left'      => $remainingByOrderItem[$orderItemId],
                 'back_qty'         => (float)$backQty,
                 'source_before'    => $qtyBefore,
                 'source_after'     => $qtyBefore + $backQty,

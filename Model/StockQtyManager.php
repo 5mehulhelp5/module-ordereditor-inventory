@@ -368,8 +368,8 @@ class StockQtyManager implements StockQtyManagerInterface
     /**
      * @param ShipmentInterface $shipment
      */
-    public function cancelShipment(ShipmentInterface $shipment): void
+    public function cancelShipment(ShipmentInterface $shipment, array &$remainingByOrderItem = []): void
     {
-        $this->processCancelledShipmentItems->execute($shipment);
+        $this->processCancelledShipmentItems->execute($shipment, $remainingByOrderItem);
     }
 }

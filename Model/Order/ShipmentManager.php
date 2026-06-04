@@ -245,6 +245,10 @@ class ShipmentManager implements ShipmentManagerInterface
     private function removeAllShipments(Order $order): void
     {
         $shipments = $order->getShipmentsCollection();
+        // Shared per-order-item budget so the total returned across ALL cancelled
+        // shipments equals the still-shippable qty (Add-new-shipment mode can leave
+        // several shipments; capping each at the full qtyToShip would over-return).
+        $remainingByOrderItem = [];
         /** @var Shipment $shipment */
         foreach ($shipments as $shipment) {
             // Unregister by key to prevent exceptions (@see body of the load method)
@@ -264,7 +268,7 @@ class ShipmentManager implements ShipmentManagerInterface
                 'items'       => count($shipment->getAllItems()),
             ]);
 
-            $this->stockQtyManager->cancelShipment($shipment);
+            $this->stockQtyManager->cancelShipment($shipment, $remainingByOrderItem);
 
             $this->shipmentRepository->delete($shipment);
         }
