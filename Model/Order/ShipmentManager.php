@@ -24,6 +24,7 @@ use MageWorx\OrderEditor\Api\ShipmentManagerInterface;
 use MageWorx\OrderEditor\Helper\Data as Helper;
 use MageWorx\OrderEditor\Model\Config\Source\Shipments\UpdateMode;
 use MageWorx\OrderEditor\Model\Order;
+use MageWorx\OrderEditor\Model\Order\Item\Quantity\ItemQuantitiesResolver;
 use MageWorx\OrderEditor\Model\StockDebugLogger;
 use MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface;
 
@@ -105,6 +106,11 @@ class ShipmentManager implements ShipmentManagerInterface
     private $stockDebugLogger;
 
     /**
+     * @var ItemQuantitiesResolver
+     */
+    private ItemQuantitiesResolver $itemQuantitiesResolver;
+
+    /**
      * ShipmentManager constructor.
      *
      * @param Helper $helperData
@@ -120,6 +126,7 @@ class ShipmentManager implements ShipmentManagerInterface
      * @param StockQtyManagerInterface $stockQtyManager
      * @param GetSkuFromOrderItemInterface $getSkuFromOrderItem
      * @param StockDebugLogger $stockDebugLogger
+     * @param ItemQuantitiesResolver $itemQuantitiesResolver
      */
     public function __construct(
         Helper                                  $helperData,
@@ -134,7 +141,8 @@ class ShipmentManager implements ShipmentManagerInterface
         OriginalOrderRepositoryInterfaceFactory $originalOrderRepositoryFactory,
         StockQtyManagerInterface                $stockQtyManager,
         GetSkuFromOrderItemInterface            $getSkuFromOrderItem,
-        StockDebugLogger                        $stockDebugLogger
+        StockDebugLogger                        $stockDebugLogger,
+        ItemQuantitiesResolver                  $itemQuantitiesResolver
     ) {
         $this->helperData                     = $helperData;
         $this->registry                       = $registry;
@@ -149,6 +157,7 @@ class ShipmentManager implements ShipmentManagerInterface
         $this->stockQtyManager                = $stockQtyManager;
         $this->getSkuFromOrderItem            = $getSkuFromOrderItem;
         $this->stockDebugLogger               = $stockDebugLogger;
+        $this->itemQuantitiesResolver         = $itemQuantitiesResolver;
     }
 
     /**
@@ -184,8 +193,7 @@ class ShipmentManager implements ShipmentManagerInterface
                     }
 
                     $sku       = $this->getSkuFromOrderItem->execute($orderItem);
-                    $qtyToShip = $orderItem->getQtyOrdered() -
-                        ($orderItem->getQtyRefunded() + $orderItem->getQtyCanceled());
+                    $qtyToShip = $this->itemQuantitiesResolver->resolve($orderItem)->kept();
                     /* 👆 Already shipped items should not be shipped one more time */
 
                     $itemsBySourceCode[$sourceCode][$orderItemId] = [

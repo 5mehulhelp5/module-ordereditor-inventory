@@ -100,7 +100,8 @@ class ShipmentManagerTest extends TestCase
             $this->originalOrderRepositoryFactory,
             $this->stockQtyManager,
             $this->getSkuFromOrderItem,
-            $this->stockDebugLogger
+            $this->stockDebugLogger,
+            new \MageWorx\OrderEditor\Model\Order\Item\Quantity\ItemQuantitiesResolver()
         );
     }
 

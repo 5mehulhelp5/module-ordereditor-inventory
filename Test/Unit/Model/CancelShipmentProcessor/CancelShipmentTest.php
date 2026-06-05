@@ -17,6 +17,7 @@ use Magento\Sales\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Model\Order\Item as OrderItem;
 use Magento\Sales\Model\Order\Shipment;
 use Magento\Sales\Model\Order\Shipment\Item as ShipmentItem;
+use MageWorx\OrderEditor\Model\Order\Item\Quantity\ItemQuantitiesResolver;
 use MageWorx\OrderEditorInventory\Model\Stock\ReturnProcessor\CancelShipmentProcessor;
 use PHPUnit\Framework\TestCase;
 
@@ -143,6 +144,7 @@ class CancelShipmentTest extends TestCase
                 'orderItemRepository'             => $orderItemRepository,
                 'getSourceItemBySourceCodeAndSku' => $getSourceItem,
                 'sourceItemsSave'                 => $sourceItemsSave,
+                'itemQuantitiesResolver'          => new ItemQuantitiesResolver(),
             ]
         );
 
@@ -229,6 +231,7 @@ class CancelShipmentTest extends TestCase
                 'orderItemRepository'             => $orderItemRepository,
                 'getSourceItemBySourceCodeAndSku' => $getSourceItem,
                 'sourceItemsSave'                 => $sourceItemsSave,
+                'itemQuantitiesResolver'          => new ItemQuantitiesResolver(),
             ]
         );
 

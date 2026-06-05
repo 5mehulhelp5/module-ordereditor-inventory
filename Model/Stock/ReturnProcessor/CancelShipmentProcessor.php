@@ -29,6 +29,7 @@ use Magento\Sales\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order\Shipment\Item as ShipmentItem;
 use Magento\Store\Api\WebsiteRepositoryInterface;
+use MageWorx\OrderEditor\Model\Order\Item\Quantity\ItemQuantitiesResolver;
 use MageWorx\OrderEditor\Model\StockDebugLogger;
 use MageWorx\OrderEditorInventory\Api\CancelShipmentProcessorInterface;
 use Psr\Log\LoggerInterface;
@@ -96,6 +97,11 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
     private $stockDebugLogger;
 
     /**
+     * @var ItemQuantitiesResolver
+     */
+    private ItemQuantitiesResolver $itemQuantitiesResolver;
+
+    /**
      * CancelShipmentProcessor constructor.
      *
      * @param SalesEventInterfaceFactory $salesEventFactory
@@ -110,6 +116,7 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
      * @param WebsiteRepositoryInterface $websiteRepository
      * @param LoggerInterface $logger
      * @param StockDebugLogger $stockDebugLogger
+     * @param ItemQuantitiesResolver $itemQuantitiesResolver
      */
     public function __construct(
         SalesEventInterfaceFactory              $salesEventFactory,
@@ -123,7 +130,8 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
         SalesChannelInterfaceFactory            $salesChannelFactory,
         WebsiteRepositoryInterface              $websiteRepository,
         LoggerInterface                         $logger,
-        StockDebugLogger                        $stockDebugLogger
+        StockDebugLogger                        $stockDebugLogger,
+        ItemQuantitiesResolver                  $itemQuantitiesResolver
     ) {
         $this->salesEventFactory               = $salesEventFactory;
         $this->itemsToSellFactory              = $itemsToSellFactory;
@@ -137,6 +145,7 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
         $this->websiteRepository               = $websiteRepository;
         $this->logger                          = $logger;
         $this->stockDebugLogger                = $stockDebugLogger;
+        $this->itemQuantitiesResolver          = $itemQuantitiesResolver;
     }
 
     /**
@@ -202,9 +211,7 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
             // stays correct across any number of sequential edits.
             if (!array_key_exists($orderItemId, $remainingByOrderItem)) {
                 $remainingByOrderItem[$orderItemId] = max(
-                    (float)$orderItem->getQtyOrdered()
-                    - (float)$orderItem->getQtyRefunded()
-                    - (float)$orderItem->getQtyCanceled(),
+                    $this->itemQuantitiesResolver->resolve($orderItem)->kept(),
                     0.0
                 );
             }
