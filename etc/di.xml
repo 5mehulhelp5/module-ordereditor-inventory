@@ -10,7 +10,16 @@
                 type="MageWorx\OrderEditorInventory\Model\StockQtyManager"/>
     <preference for="MageWorx\OrderEditorInventory\Api\CancelShipmentProcessorInterface"
                 type="MageWorx\OrderEditorInventory\Model\Stock\ReturnProcessor\CancelShipmentProcessor"/>
+    <!-- Override the no-op fallback from OrderEditor with the real MSI exchange -->
+    <preference for="MageWorx\OrderEditor\Api\Stock\SwapPhysicalExchangeInterface"
+                type="MageWorx\OrderEditorInventory\Model\Stock\MsiSwapPhysicalExchange"/>
     <type name="MageWorx\OrderEditor\Model\Order\Item">
+        <arguments>
+            <argument name="stockManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Stock\MultiSourceInventoryManager</argument>
+        </arguments>
+    </type>
+    <!-- Inject MSI stock manager into the new StockService -->
+    <type name="MageWorx\OrderEditor\Model\Order\Item\StockService">
         <arguments>
             <argument name="stockManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Stock\MultiSourceInventoryManager</argument>
         </arguments>
@@ -29,8 +38,17 @@
             </argument>
         </arguments>
     </type>
-    <!-- Shipment manager with MSI support -->
-    <type name="MageWorx\OrderEditor\Model\Order\Sales">
+    <!-- Shipment manager with MSI support — must be injected into BOTH sales
+         processors. Without it a processor falls back to the non-MSI
+         ShipmentManager, whose removeAllShipments() deletes shipments without
+         returning stock, so a "delete & create new shipment" edit double-deducts
+         the still-shipped qty (source drift). -->
+    <type name="MageWorx\OrderEditor\Model\Order\SalesProcessor\DeleteAndCreateSalesProcessor">
+        <arguments>
+            <argument name="shipmentManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Order\ShipmentManager</argument>
+        </arguments>
+    </type>
+    <type name="MageWorx\OrderEditor\Model\Order\SalesProcessor\KeepUntouchedSalesProcessor">
         <arguments>
             <argument name="shipmentManager" xsi:type="object">MageWorx\OrderEditorInventory\Model\Order\ShipmentManager</argument>
         </arguments>

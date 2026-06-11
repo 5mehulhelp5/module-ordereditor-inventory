@@ -29,6 +29,8 @@ use Magento\Sales\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order\Shipment\Item as ShipmentItem;
 use Magento\Store\Api\WebsiteRepositoryInterface;
+use MageWorx\OrderEditor\Model\Order\Item\Quantity\ItemQuantitiesResolver;
+use MageWorx\OrderEditor\Model\StockDebugLogger;
 use MageWorx\OrderEditorInventory\Api\CancelShipmentProcessorInterface;
 use Psr\Log\LoggerInterface;
 
@@ -90,6 +92,16 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
     private $websiteRepository;
 
     /**
+     * @var StockDebugLogger
+     */
+    private $stockDebugLogger;
+
+    /**
+     * @var ItemQuantitiesResolver
+     */
+    private ItemQuantitiesResolver $itemQuantitiesResolver;
+
+    /**
      * CancelShipmentProcessor constructor.
      *
      * @param SalesEventInterfaceFactory $salesEventFactory
@@ -100,7 +112,11 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
      * @param OrderRepositoryInterface $orderRepository
      * @param SourceItemsSaveInterface $sourceItemsSave
      * @param GetSourceItemBySourceCodeAndSku $getSourceItemBySourceCodeAndSku
+     * @param SalesChannelInterfaceFactory $salesChannelFactory
+     * @param WebsiteRepositoryInterface $websiteRepository
      * @param LoggerInterface $logger
+     * @param StockDebugLogger $stockDebugLogger
+     * @param ItemQuantitiesResolver $itemQuantitiesResolver
      */
     public function __construct(
         SalesEventInterfaceFactory              $salesEventFactory,
@@ -113,7 +129,9 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
         GetSourceItemBySourceCodeAndSku         $getSourceItemBySourceCodeAndSku,
         SalesChannelInterfaceFactory            $salesChannelFactory,
         WebsiteRepositoryInterface              $websiteRepository,
-        LoggerInterface                         $logger
+        LoggerInterface                         $logger,
+        StockDebugLogger                        $stockDebugLogger,
+        ItemQuantitiesResolver                  $itemQuantitiesResolver
     ) {
         $this->salesEventFactory               = $salesEventFactory;
         $this->itemsToSellFactory              = $itemsToSellFactory;
@@ -126,19 +144,32 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
         $this->salesChannelFactory             = $salesChannelFactory;
         $this->websiteRepository               = $websiteRepository;
         $this->logger                          = $logger;
+        $this->stockDebugLogger                = $stockDebugLogger;
+        $this->itemQuantitiesResolver          = $itemQuantitiesResolver;
     }
 
     /**
      * @inheritDoc
      */
-    public function execute(ShipmentInterface $shipment): void
+    public function execute(ShipmentInterface $shipment, array &$remainingByOrderItem = []): void
     {
+        $this->stockDebugLogger->open('CancelShipmentProcessor::execute', [
+            'shipment_id' => (int)$shipment->getEntityId(),
+            'order_id'    => (int)$shipment->getOrderId(),
+            'source_code' => $shipment->getExtensionAttributes()
+                ? $shipment->getExtensionAttributes()->getSourceCode()
+                : null,
+        ]);
+
         $shipmentItems = $shipment->getAllItems();
         if (empty($shipmentItems)) {
+            $this->stockDebugLogger->warn('no shipment items — nothing to return');
+            $this->stockDebugLogger->close('skipped');
             return;
         }
 
-        $itemToSell = [];
+        $itemToSell  = [];
+        $sourceItems = [];
 
         /** @var ShipmentItem $shipmentItem */
         foreach ($shipmentItems as $shipmentItem) {
@@ -147,30 +178,67 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
              * @var ShipmentExtension|null $extensionAttributes
              */
             $extensionAttributes = $shipment->getExtensionAttributes();
-            if (!is_null($extensionAttributes)) {
+            if ($extensionAttributes !== null) {
                 $sourceCode = $extensionAttributes->getSourceCode();
             }
             if ($sourceCode === null) {
-                continue; // Source code is not set, we can't return items
+                // Source code is not set, we can't return items. Silent skip here
+                // means deleted-shipment stock is never given back — log it loudly.
+                $this->stockDebugLogger->warn('source_code is null — stock NOT returned for item', [
+                    'order_item_id' => (int)$shipmentItem->getOrderItemId(),
+                    'sku'           => $shipmentItem->getSku(),
+                    'qty'           => (float)$shipmentItem->getQty(),
+                ]);
+                continue;
             }
 
-            $orderItem = $this->orderItemRepository->get((int)$shipmentItem->getOrderItemId());
-            if ($orderItem->getQtyShipped() > $orderItem->getQtyOrdered()) {
-                /**
-                 * Negative modification which will prevent double deduction
-                 * because we already removed item from stock in
-                 * \MageWorx\OrderEditorInventory\Model\StockQtyManager::returnQtyToStock() method
-                 */
-                $qtyModification = $orderItem->getQtyOrdered() - $orderItem->getQtyShipped();
-            } else {
-                $qtyModification = 0;
+            $orderItemId = (int)$shipmentItem->getOrderItemId();
+            $orderItem   = $this->orderItemRepository->get($orderItemId);
+
+            // Return only the still-shippable qty — the amount the recreated shipment
+            // will re-deduct — so the delete+recreate pair is stock-neutral; the
+            // refunded/canceled portions are returned by the credit memo / cancel flow
+            // (their sole owners), which avoids a double return.
+            //
+            // qtyToShip is the TOTAL still-shippable qty for the order item and acts as
+            // a budget SHARED across every shipment of this order cancelled in one pass.
+            // An "Add new shipment" edit leaves several shipments (e.g. 5 + 3); without
+            // the shared budget each would return min(qtyToShip, shipmentQty) and the
+            // sum would exceed qtyToShip (over-return). The budget is initialized lazily
+            // per order item and decremented as each shipment returns its share, so the
+            // total returned equals qtyToShip regardless of how the qty is split.
+            // It is also derived from the order item (not the old shipment qty), so it
+            // stays correct across any number of sequential edits.
+            if (!array_key_exists($orderItemId, $remainingByOrderItem)) {
+                $remainingByOrderItem[$orderItemId] = max(
+                    $this->itemQuantitiesResolver->resolve($orderItem)->kept(),
+                    0.0
+                );
             }
-            $backQty = $shipmentItem->getQty() + $qtyModification;
-            $sku     = $shipmentItem->getSku();
+            $qtyToShip = $remainingByOrderItem[$orderItemId];
+            $backQty   = max(min($qtyToShip, (float)$shipmentItem->getQty()), 0.0);
+            $remainingByOrderItem[$orderItemId] = $qtyToShip - $backQty;
+            $sku       = $shipmentItem->getSku();
 
             $sourceItem = $this->getSourceItemBySourceCodeAndSku->execute($sourceCode, $sku);
+            $qtyBefore  = (float)$sourceItem->getQuantity();
             $sourceItem->setQuantity($sourceItem->getQuantity() + $backQty);
             $sourceItems[] = $sourceItem;
+
+            $this->stockDebugLogger->log('return shipment qty to source', [
+                'sku'              => $sku,
+                'source_code'      => $sourceCode,
+                'shipment_qty'     => (float)$shipmentItem->getQty(),
+                'qty_ordered'      => (float)$orderItem->getQtyOrdered(),
+                'qty_refunded'     => (float)$orderItem->getQtyRefunded(),
+                'qty_canceled'     => (float)$orderItem->getQtyCanceled(),
+                'budget_used'      => $qtyToShip,
+                'budget_left'      => $remainingByOrderItem[$orderItemId],
+                'back_qty'         => (float)$backQty,
+                'source_before'    => $qtyBefore,
+                'source_after'     => $qtyBefore + $backQty,
+                'reservation_comp' => (float)-$backQty,
+            ]);
 
             // Reservation compensation should be negative!
             $itemToSell[] = $this->itemsToSellFactory->create(
@@ -187,14 +255,23 @@ class CancelShipmentProcessor implements CancelShipmentProcessorInterface
                 try {
                     $this->placeReservationForCancelShipmentEvent($shipment, $itemToSell);
                 } catch (LocalizedException $localizedException) {
+                    $this->stockDebugLogger->warn('reservation compensation failed', [
+                        'error' => $localizedException->getLogMessage(),
+                    ]);
                     $this->logger->error($localizedException->getLogMessage());
                 }
             } catch (CouldNotSaveException $e) {
+                $this->stockDebugLogger->warn('source items save failed', ['error' => $e->getLogMessage()]);
                 $this->logger->error($e->getLogMessage());
             } catch (InputException|ValidationException $e) {
+                $this->stockDebugLogger->warn('source items save invalid', ['error' => $e->getLogMessage()]);
                 $this->logger->notice($e->getLogMessage());
             }
+        } else {
+            $this->stockDebugLogger->warn('no source items collected — no stock returned for this shipment');
         }
+
+        $this->stockDebugLogger->close('cancel shipment done');
     }
 
     /**

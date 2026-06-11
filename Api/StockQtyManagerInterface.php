@@ -32,9 +32,11 @@ interface StockQtyManagerInterface
     public function returnQtyToStock(OrderItem $orderItem, ?float $qty = null): void;
 
     /**
-     * Return all shipment items to stock (cancel\delete shipment)
+     * Return shipment items to stock (cancel\delete shipment).
      *
      * @param ShipmentInterface $shipment
+     * @param array<int, float> $remainingByOrderItem Shared budget across the order's shipments
+     *        cancelled in one pass — see CancelShipmentProcessorInterface::execute().
      */
-    public function cancelShipment(ShipmentInterface $shipment): void;
+    public function cancelShipment(ShipmentInterface $shipment, array &$remainingByOrderItem = []): void;
 }

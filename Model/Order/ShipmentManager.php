@@ -24,6 +24,8 @@ use MageWorx\OrderEditor\Api\ShipmentManagerInterface;
 use MageWorx\OrderEditor\Helper\Data as Helper;
 use MageWorx\OrderEditor\Model\Config\Source\Shipments\UpdateMode;
 use MageWorx\OrderEditor\Model\Order;
+use MageWorx\OrderEditor\Model\Order\Item\Quantity\ItemQuantitiesResolver;
+use MageWorx\OrderEditor\Model\StockDebugLogger;
 use MageWorx\OrderEditorInventory\Api\StockQtyManagerInterface;
 
 /**
@@ -99,6 +101,16 @@ class ShipmentManager implements ShipmentManagerInterface
     private $getSkuFromOrderItem;
 
     /**
+     * @var StockDebugLogger
+     */
+    private $stockDebugLogger;
+
+    /**
+     * @var ItemQuantitiesResolver
+     */
+    private ItemQuantitiesResolver $itemQuantitiesResolver;
+
+    /**
      * ShipmentManager constructor.
      *
      * @param Helper $helperData
@@ -113,6 +125,8 @@ class ShipmentManager implements ShipmentManagerInterface
      * @param OriginalOrderRepositoryInterfaceFactory $originalOrderRepositoryFactory
      * @param StockQtyManagerInterface $stockQtyManager
      * @param GetSkuFromOrderItemInterface $getSkuFromOrderItem
+     * @param StockDebugLogger $stockDebugLogger
+     * @param ItemQuantitiesResolver $itemQuantitiesResolver
      */
     public function __construct(
         Helper                                  $helperData,
@@ -126,7 +140,9 @@ class ShipmentManager implements ShipmentManagerInterface
         OriginalOrderRepositoryInterface        $originalOrderRepository,
         OriginalOrderRepositoryInterfaceFactory $originalOrderRepositoryFactory,
         StockQtyManagerInterface                $stockQtyManager,
-        GetSkuFromOrderItemInterface            $getSkuFromOrderItem
+        GetSkuFromOrderItemInterface            $getSkuFromOrderItem,
+        StockDebugLogger                        $stockDebugLogger,
+        ItemQuantitiesResolver                  $itemQuantitiesResolver
     ) {
         $this->helperData                     = $helperData;
         $this->registry                       = $registry;
@@ -140,6 +156,8 @@ class ShipmentManager implements ShipmentManagerInterface
         $this->originalOrderRepositoryFactory = $originalOrderRepositoryFactory;
         $this->stockQtyManager                = $stockQtyManager;
         $this->getSkuFromOrderItem            = $getSkuFromOrderItem;
+        $this->stockDebugLogger               = $stockDebugLogger;
+        $this->itemQuantitiesResolver         = $itemQuantitiesResolver;
     }
 
     /**
@@ -150,6 +168,10 @@ class ShipmentManager implements ShipmentManagerInterface
         Order $order
     ): Order {
         if ($order->hasShipments()) {
+            $this->stockDebugLogger->open('ShipmentManager::updateShipmentsOnOrderEdit', [
+                'order_id' => (int)$order->getId(),
+                'mode'     => $this->helperData->getUpdateShipmentMode(),
+            ]);
             $itemsBySourceCode = [];
             foreach ($order->getShipmentsCollection() as $shipment) {
                 // Unregister by key to prevent exceptions (@see body of the load method)
@@ -171,8 +193,7 @@ class ShipmentManager implements ShipmentManagerInterface
                     }
 
                     $sku       = $this->getSkuFromOrderItem->execute($orderItem);
-                    $qtyToShip = $orderItem->getQtyOrdered() -
-                        ($orderItem->getQtyRefunded() + $orderItem->getQtyCanceled());
+                    $qtyToShip = $this->itemQuantitiesResolver->resolve($orderItem)->kept();
                     /* 👆 Already shipped items should not be shipped one more time */
 
                     $itemsBySourceCode[$sourceCode][$orderItemId] = [
@@ -200,13 +221,16 @@ class ShipmentManager implements ShipmentManagerInterface
                     $this->createShipmentForOrder($order, $itemsBySourceCode);
                     break;
                 case UpdateMode::MODE_UPDATE_NOTHING:
-                    if ($order->hasRemovedItems()
-                        || $order->hasItemsWithDecreasedQty()
-                    ) {
-                        $this->removeAllShipments($order);
-                    }
+                    // "Do not touch" — shipments are left exactly as they are (the
+                    // historical record of what was physically shipped). Stock return
+                    // on a decrease/removal is owned by the credit memo (back_to_stock).
+                    // Deleting shipments here would contradict the mode and, via
+                    // cancelShipment, double-move stock. (Matches the base non-MSI
+                    // ShipmentManager, whose NOTHING branch is a plain no-op.)
                     break;
             }
+
+            $this->stockDebugLogger->close('shipments updated');
         }
 
         return $order;
@@ -230,6 +254,10 @@ class ShipmentManager implements ShipmentManagerInterface
     private function removeAllShipments(Order $order): void
     {
         $shipments = $order->getShipmentsCollection();
+        // Shared per-order-item budget so the total returned across ALL cancelled
+        // shipments equals the still-shippable qty (Add-new-shipment mode can leave
+        // several shipments; capping each at the full qtyToShip would over-return).
+        $remainingByOrderItem = [];
         /** @var Shipment $shipment */
         foreach ($shipments as $shipment) {
             // Unregister by key to prevent exceptions (@see body of the load method)
@@ -241,7 +269,15 @@ class ShipmentManager implements ShipmentManagerInterface
                                                         ->setShipmentId($shipment->getId())
                                                         ->load();
 
-            $this->stockQtyManager->cancelShipment($shipment);
+            $this->stockDebugLogger->log('cancel + delete shipment', [
+                'shipment_id' => (int)$shipment->getId(),
+                'source_code' => $shipment->getExtensionAttributes()
+                    ? $shipment->getExtensionAttributes()->getSourceCode()
+                    : null,
+                'items'       => count($shipment->getAllItems()),
+            ]);
+
+            $this->stockQtyManager->cancelShipment($shipment, $remainingByOrderItem);
 
             $this->shipmentRepository->delete($shipment);
         }
@@ -282,6 +318,10 @@ class ShipmentManager implements ShipmentManagerInterface
         if ($order->canShip()) {
             foreach ($itemsBySourceCode as $sourceCode => $items) {
                 $data = $this->getShipmentData($order, $sourceCode, $items);
+                $this->stockDebugLogger->log('create new shipment', [
+                    'source_code' => $sourceCode,
+                    'items'       => $data['items'] ?? [],
+                ]);
                 // Unregister by key to prevent exceptions (@see body of the load method)
                 $this->registry->unregister('current_shipment');
                 // Need to reload order registry in order repository
